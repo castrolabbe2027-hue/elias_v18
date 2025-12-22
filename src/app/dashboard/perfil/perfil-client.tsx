@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { UserCircle, UserCircle2, BarChart3, History as HistoryIcon, Download, Trash2, Edit3, Award, Percent, Newspaper, Network, FileQuestion, Upload, Camera, Shield, Crown, GraduationCap, CheckCircle, AlertTriangle } from 'lucide-react';
+import { UserCircle, UserCircle2, BarChart3, History as HistoryIcon, Download, Trash2, Edit3, Award, Percent, Newspaper, Network, FileQuestion, Upload, Camera, Shield, Crown, GraduationCap, CheckCircle, AlertTriangle, Users } from 'lucide-react';
 import type { UserProfile, SubjectProgress, EvaluationHistoryItem } from '@/lib/types';
 import { useEffect, useState, useMemo } from 'react';
 import { LocalStorageManager } from '@/lib/education-utils';
@@ -150,12 +150,19 @@ export default function PerfilClient() {
         className: 'bg-green-100 text-green-800 border-green-200 hover:bg-green-100 hover:text-green-800',
         icon: GraduationCap,
         iconClassName: 'text-green-700'
+      },
+      guardian: {
+        labelKey: 'guardianRole',
+        variant: 'outline' as const,
+        className: 'bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-100 hover:text-purple-800',
+        icon: Users,
+        iconClassName: 'text-purple-700'
       }
     };
 
     // Normalizar clave de rol al conjunto esperado
-    const roleKey: 'admin' | 'teacher' | 'student' =
-      user.role === 'admin' ? 'admin' : user.role === 'teacher' ? 'teacher' : 'student';
+    const roleKey: 'admin' | 'teacher' | 'student' | 'guardian' =
+      user.role === 'admin' ? 'admin' : user.role === 'teacher' ? 'teacher' : user.role === 'guardian' ? 'guardian' : 'student';
     const config = roleConfig[roleKey];
     if (!config) return null;
 
@@ -1859,10 +1866,88 @@ export default function PerfilClient() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2">
-                      {user?.role === 'teacher' ? translate('editUserAcademicInfo') : translate('profileAssignedCourse')}
+                      {user?.role === 'teacher' ? translate('editUserAcademicInfo') : user?.role === 'guardian' ? (translate('profileAssignedStudents') || 'Estudiantes Asignados') : translate('profileAssignedCourse')}
                     </label>
                     
-                    {user?.role === 'teacher' ? (
+                    {user?.role === 'guardian' ? (
+                      // Para apoderados: mostrar estudiantes asignados
+                      (() => {
+                        if (!user?.username) return <div className="text-sm text-gray-600 dark:text-slate-300 italic">{translate('profileNoUserDataFound')}</div>;
+                        
+                        try {
+                          const storedUsers = localStorage.getItem('smart-student-users');
+                          const storedRelations = localStorage.getItem('smart-student-guardian-relations');
+                          
+                          if (!storedUsers) return <div className="text-sm text-gray-600 dark:text-slate-300 italic">{translate('profileNoUserDataFound')}</div>;
+                          
+                          const usersData = JSON.parse(storedUsers);
+                          const fullUserData = usersData.find((u: any) => u.username === user.username);
+                          if (!fullUserData) return <div className="text-sm text-gray-600 dark:text-slate-300 italic">{translate('profileNoGuardianDataFound') || 'Datos de apoderado no encontrados'}</div>;
+                          
+                          // Obtener IDs de estudiantes asignados
+                          let assignedStudentIds: string[] = [];
+                          
+                          // Primero intentar desde relaciones
+                          if (storedRelations) {
+                            const relations = JSON.parse(storedRelations);
+                            assignedStudentIds = relations
+                              .filter((r: any) => r.guardianId === fullUserData.id)
+                              .map((r: any) => r.studentId);
+                          }
+                          
+                          // Fallback: desde el propio usuario (studentIds)
+                          if (assignedStudentIds.length === 0 && fullUserData.studentIds) {
+                            assignedStudentIds = fullUserData.studentIds;
+                          }
+                          
+                          if (assignedStudentIds.length === 0) {
+                            return (
+                              <div className="space-y-2">
+                                <div className="text-sm text-orange-600 dark:text-orange-400 italic">
+                                  {translate('profileNoAssignedStudents') || 'No hay estudiantes asignados'}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {translate('profileContactAdminForStudents') || 'Contacta al administrador para asignar estudiantes'}
+                                </div>
+                              </div>
+                            );
+                          }
+                          
+                          // Obtener datos de los estudiantes
+                          const courses = JSON.parse(localStorage.getItem('smart-student-courses') || '[]');
+                          const sections = JSON.parse(localStorage.getItem('smart-student-sections') || '[]');
+                          
+                          const assignedStudents = usersData.filter((u: any) => 
+                            assignedStudentIds.includes(u.id) && (u.role === 'student' || u.type === 'student')
+                          );
+                          
+                          return (
+                            <div className="space-y-3">
+                              {assignedStudents.map((student: any) => {
+                                const course = courses.find((c: any) => c.id === student.courseId);
+                                const section = sections.find((s: any) => s.id === student.sectionId);
+                                return (
+                                  <div key={student.id} className="flex items-center gap-2 flex-wrap bg-gray-100 dark:bg-slate-700/60 rounded-lg p-3 border border-gray-300 dark:border-slate-600/50">
+                                    <GraduationCap className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                    <span className="text-gray-800 dark:text-white font-medium">
+                                      {student.displayName || student.name || student.username}
+                                    </span>
+                                    {course && (
+                                      <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-700">
+                                        {course.name}{section ? ` - ${section.name}` : ''}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        } catch (error) {
+                          console.error('Error al cargar datos del apoderado:', error);
+                          return <div className="text-sm text-gray-600 dark:text-slate-300 italic">{translate('profileErrorLoadingAcademicInfo')}</div>;
+                        }
+                      })()
+                    ) : user?.role === 'teacher' ? (
                       // Para profesores: mostrar asignaciones completas como en gestión de usuarios
                       (() => {
                         if (!user?.username) return <div className="text-sm text-gray-600 dark:text-slate-300 italic">{translate('profileNoUserDataFound')}</div>;
@@ -2036,7 +2121,8 @@ export default function PerfilClient() {
         </CardContent>
       </Card>
 
-      {/* Profile Stats Cards */}
+      {/* Profile Stats Cards - Oculto para apoderados */}
+      {user?.role !== 'guardian' && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
         {dynamicProfileCards.map((card, index) => (
           <Card key={index} className="shadow-lg bg-gradient-to-br from-gray-100 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-700 text-gray-800 dark:text-white border border-gray-200 dark:border-slate-600 relative overflow-hidden group hover:scale-105 hover:shadow-xl transition-all duration-300 cursor-pointer">
@@ -2057,8 +2143,10 @@ export default function PerfilClient() {
           </Card>
         ))}
       </div>
+      )}
 
-      {/* Learning Progress */}
+      {/* Learning Progress - Oculto para apoderados */}
+      {user?.role !== 'guardian' && (
       <Card className="shadow-lg bg-gradient-to-br from-gray-100 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-700 text-gray-800 dark:text-white border border-gray-200 dark:border-slate-600">
         <CardHeader>
           <div className="flex items-center gap-4 mb-2">
@@ -2087,8 +2175,10 @@ export default function PerfilClient() {
           </div>
         </CardContent>
       </Card>
+      )}
 
-      {/* Evaluation History */}
+      {/* Evaluation History - Oculto para apoderados */}
+      {user?.role !== 'guardian' && (
       <Card className="shadow-lg bg-gradient-to-br from-gray-100 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-700 text-gray-800 dark:text-white border border-gray-200 dark:border-slate-600">
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -2191,6 +2281,7 @@ export default function PerfilClient() {
           )}
         </CardContent>
       </Card>
+      )}
       </div>
     </>
   );
