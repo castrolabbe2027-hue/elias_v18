@@ -427,13 +427,46 @@ export default function DashboardHomePage() {
         return courses.find((c: any) => c.id === id)?.name || fb || '';
       };
 
-      // Para apoderados: obtener estudiantes asignados
+      // Para apoderados: obtener estudiantes asignados (misma lógica que comunicaciones/page.tsx)
       if (user.role === 'guardian') {
         const currentYear = new Date().getFullYear();
-        const guardianRelations = JSON.parse(localStorage.getItem(`smart-student-guardian-student-relations-${currentYear}`) || '[]');
-        const assignedStudentIds = guardianRelations
-          .filter((rel: any) => rel.guardianId === user.id)
-          .map((rel: any) => rel.studentId);
+        let assignedStudentIds: string[] = [];
+        
+        // Prioridad 1: Buscar en smart-student-guardians-{year} (datos de carga masiva)
+        const guardiansForYear = JSON.parse(localStorage.getItem(`smart-student-guardians-${currentYear}`) || '[]');
+        const guardianFromYear = guardiansForYear.find((g: any) => 
+          g.username?.toLowerCase() === user.username?.toLowerCase() ||
+          g.id === user.id
+        );
+        
+        if (guardianFromYear?.studentIds && guardianFromYear.studentIds.length > 0) {
+          assignedStudentIds = guardianFromYear.studentIds;
+        }
+        
+        // Prioridad 2: Buscar en smart-student-guardian-student-relations-{year}
+        if (assignedStudentIds.length === 0) {
+          let guardianRelations = JSON.parse(localStorage.getItem(`smart-student-guardian-student-relations-${currentYear}`) || '[]');
+          if (guardianRelations.length === 0) {
+            guardianRelations = JSON.parse(localStorage.getItem('smart-student-guardian-student-relations') || '[]');
+          }
+          assignedStudentIds = guardianRelations
+            .filter((rel: any) => rel.guardianId === user.id || rel.guardianUsername === user.username)
+            .map((rel: any) => rel.studentId);
+        }
+        
+        // Prioridad 3: Buscar en smart-student-users (fullUserData.studentIds)
+        if (assignedStudentIds.length === 0) {
+          const storedUsers = localStorage.getItem('smart-student-users');
+          if (storedUsers) {
+            const usersData = JSON.parse(storedUsers);
+            const fullUserData = usersData.find((u: any) => 
+              u.username?.toLowerCase() === user.username?.toLowerCase()
+            );
+            if (fullUserData?.studentIds && fullUserData.studentIds.length > 0) {
+              assignedStudentIds = fullUserData.studentIds;
+            }
+          }
+        }
         
         if (assignedStudentIds.length === 0) {
           setUnreadCommunicationsCount(0);
@@ -441,26 +474,43 @@ export default function DashboardHomePage() {
         }
 
         // Buscar comunicaciones para los estudiantes asignados al apoderado
-        const guardianCommunications = all.filter((comm: any) => {
+        // 🔧 CORRECCIÓN: Contar cada instancia por estudiante de forma independiente
+        let unreadCount = 0;
+        
+        all.forEach((comm: any) => {
           // Comunicaciones dirigidas específicamente a alguno de los estudiantes asignados
           if (comm.type === 'student' && assignedStudentIds.includes(comm.targetStudent)) {
-            return true;
+            // Para comunicaciones a estudiante específico, usar identificador compuesto
+            const readByKey = `${user.id}_forStudent_${comm.targetStudent}`;
+            if (!(comm.readBy || []).includes(readByKey) && !(comm.readBy || []).includes(user.id)) {
+              unreadCount++;
+            }
+            return;
           }
+          
           // Comunicaciones de curso: verificar si algún estudiante asignado pertenece al curso/sección
-          if (comm.type === 'course' && comm.targetCourse && comm.targetSection) {
+          if (comm.type === 'course' && comm.targetCourse) {
             const studentAssignmentsForGuardian = assignments.filter((a: any) => 
               a && assignedStudentIds.includes(a.studentId)
             );
-            const matchCourseAndSection = studentAssignmentsForGuardian.some((a: any) => 
-              a.courseId === comm.targetCourse && a.sectionId === comm.targetSection
-            );
-            return matchCourseAndSection;
+            // Encontrar todos los estudiantes que pertenecen a este curso/sección
+            const matchingStudents = studentAssignmentsForGuardian.filter((a: any) => {
+              const courseMatch = a.courseId === comm.targetCourse;
+              const sectionMatch = !comm.targetSection || a.sectionId === comm.targetSection;
+              return courseMatch && sectionMatch;
+            });
+            
+            // Contar cada instancia por estudiante como no leída si no tiene el identificador compuesto
+            matchingStudents.forEach((assignment: any) => {
+              const readByKey = `${user.id}_forStudent_${assignment.studentId}`;
+              if (!(comm.readBy || []).includes(readByKey) && !(comm.readBy || []).includes(user.id)) {
+                unreadCount++;
+              }
+            });
           }
-          return false;
         });
 
-        const unread = guardianCommunications.filter((c: any) => !((c.readBy || []).includes(user.id)));
-        setUnreadCommunicationsCount(unread.length);
+        setUnreadCommunicationsCount(unreadCount);
         return;
       }
 
@@ -1493,7 +1543,7 @@ export default function DashboardHomePage() {
               );
             })()
           )}
-          {user?.role === 'student' && card.titleKey === 'cardCommunicationsStudentTitle' && unreadCommunicationsCount > 0 && (
+          {(user?.role === 'student' || user?.role === 'guardian') && card.titleKey === 'cardCommunicationsStudentTitle' && unreadCommunicationsCount > 0 && (
             <Badge 
               className="absolute -top-2 -right-2 bg-red-500 text-white hover:bg-red-600 text-xs px-2 rounded-full"
               title={translate('unreadCommunicationsBadge', { count: String(unreadCommunicationsCount) }) || `${unreadCommunicationsCount} comunicaciones sin leer`}
@@ -1642,6 +1692,9 @@ export default function DashboardHomePage() {
                     } catch {}
 
                     totalCount = pendingTaskSubmissionsCount + unreadStudentCommentsCount + teacherNotificationsExcludingDuplicates + (attendanceTotal || pendingAttendanceCount); // ➕ incluir días pendientes acumulados
+                  } else if (user.role === 'guardian') {
+                    // Para apoderados: solo comunicaciones no leídas de sus estudiantes
+                    totalCount = unreadCommunicationsCount;
                   } else {
                     // Para estudiantes: sumar comunicaciones no leídas
                     totalCount = pendingTasksCount + unreadCommentsCount + taskNotificationsCount + unreadCommunicationsCount;
@@ -1665,12 +1718,14 @@ export default function DashboardHomePage() {
                     const attendanceTotal = Number(localStorage.getItem('smart-student-attendance-pending-total') || '0');
                     console.log(`  • pendingAttendanceCount (today): ${pendingAttendanceCount} ➕`);
                     console.log(`  • pendingAttendanceTotal (year-to-date working days): ${attendanceTotal} ➕ (included in bell)`);
+                  } else if (user.role === 'guardian') {
+                    console.log(`  • unreadCommunicationsCount: ${unreadCommunicationsCount} 📧`);
                   } else {
                     console.log(`  • taskNotificationsCount: ${taskNotificationsCount} ⭐ (includes evaluation_completed)`);
                   }
                   console.log(`  • pendingTasksCount: ${pendingTasksCount}`);
                   console.log(`  • unreadCommentsCount: ${unreadCommentsCount}`);
-                  if (user.role === 'student') {
+                  if (user.role === 'student' || user.role === 'guardian') {
                     console.log(`  • unreadCommunicationsCount: ${unreadCommunicationsCount}`);
                   }
                   console.log(`  🎯 NOTIFICATION PANEL TOTAL COUNT: ${totalCount}`);
@@ -1786,14 +1841,14 @@ export default function DashboardHomePage() {
               className={`flex flex-col text-center shadow-sm hover:shadow-lg transition-shadow duration-300 ${getBorderColorClass(card.colorClass)}`}
             >
               <CardHeader className="items-center relative">
-                {/* Badge de comunicaciones no leídas para apoderados */}
+                {/* Badge de comunicaciones no leídas para apoderados - Mismo estilo que estudiante */}
                 {card.titleKey === 'cardCommunicationsStudentTitle' && unreadCommunicationsCount > 0 && (
-                  <span 
-                    className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold rounded-full px-2 py-0.5 min-w-[20px] text-center shadow-md animate-pulse"
+                  <Badge 
+                    className="absolute -top-2 -right-2 bg-red-500 text-white hover:bg-red-600 text-xs px-2 rounded-full"
                     title={translate('unreadCommunicationsBadge', { count: String(unreadCommunicationsCount) }) || `${unreadCommunicationsCount} comunicaciones sin leer`}
                   >
                     {unreadCommunicationsCount > 99 ? '99+' : unreadCommunicationsCount}
-                  </span>
+                  </Badge>
                 )}
                 <card.icon className={`w-10 h-10 mb-3 ${getIconColorClass(card.colorClass)}`} />
                 <CardTitle className="text-lg font-semibold font-headline">{translate(card.titleKey)}</CardTitle>

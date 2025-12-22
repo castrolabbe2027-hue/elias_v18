@@ -235,39 +235,79 @@ export default function ComunicacionesPage() {
   useEffect(() => {
     if (formData.type === 'student') {
       let filteredStudents = [...students];
+      
+      console.log('🔍 DEBUG Filtrado - students cargados:', students.length);
+      console.log('🔍 DEBUG Filtrado - selectedCourseForStudent:', formData.selectedCourseForStudent);
 
       // Filtrar por curso-sección seleccionado
       if (formData.selectedCourseForStudent) {
         const selectedCourseSection = courseSections.find(cs => cs.id === formData.selectedCourseForStudent);
         const courseName = selectedCourseSection?.courseName;
+        const courseId = selectedCourseSection?.courseId;
         const sectionId = selectedCourseSection?.sectionId;
+        
+        console.log('🔍 DEBUG Filtrado - courseSection encontrado:', selectedCourseSection);
+        console.log('🔍 DEBUG Filtrado - courseId:', courseId, 'sectionId:', sectionId);
 
         try {
-          const stored = localStorage.getItem('smart-student-student-assignments');
+          // Buscar asignaciones en storage por año (2025) Y legacy
+          const currentYear = new Date().getFullYear();
+          const storedYear = localStorage.getItem(`smart-student-student-assignments-${currentYear}`);
+          const storedLegacy = localStorage.getItem('smart-student-student-assignments');
+          const stored = storedYear || storedLegacy;
+          
+          console.log('🔍 DEBUG Filtrado - stored assignments found:', !!stored);
+          
           if (stored && sectionId) {
             const assignments = JSON.parse(stored);
-            const allowedIds = new Set(
-              assignments
-                .filter((a: any) => a.sectionId === sectionId)
-                .map((a: any) => a.studentId)
+            console.log('🔍 DEBUG Filtrado - total assignments:', assignments.length);
+            
+            // Filtrar por sectionId
+            const matchingAssignments = assignments.filter((a: any) => a.sectionId === sectionId);
+            console.log('🔍 DEBUG Filtrado - matching sectionId:', matchingAssignments.length);
+            
+            const allowedIds = new Set(matchingAssignments.map((a: any) => a.studentId));
+            console.log('🔍 DEBUG Filtrado - allowedIds:', Array.from(allowedIds));
+            
+            if (allowedIds.size > 0) {
+              filteredStudents = filteredStudents.filter(s => allowedIds.has(s.id));
+              console.log('🔍 DEBUG Filtrado - filteredStudents por sectionId:', filteredStudents.length);
+            } else {
+              // Si no hay asignaciones específicas, intentar filtro por courseId también
+              const courseMatchingAssignments = assignments.filter((a: any) => a.courseId === courseId);
+              const courseAllowedIds = new Set(courseMatchingAssignments.map((a: any) => a.studentId));
+              
+              if (courseAllowedIds.size > 0) {
+                filteredStudents = filteredStudents.filter(s => courseAllowedIds.has(s.id));
+                console.log('🔍 DEBUG Filtrado - filteredStudents por courseId:', filteredStudents.length);
+              }
+            }
+          }
+          
+          // Fallback: Si no hay estudiantes después del filtro, usar activeCourses
+          if (filteredStudents.length === 0 && courseName) {
+            console.log('🔍 DEBUG Filtrado - Usando fallback por activeCourses');
+            filteredStudents = students.filter(student => 
+              student.assignedCourses?.some((c: any) => 
+                typeof c === 'string' ? c.includes(courseName) : c?.name?.includes(courseName)
+              )
             );
-            filteredStudents = filteredStudents.filter(s => allowedIds.has(s.id));
-          } else if (courseName) {
-            // Fallback por curso cuando no hay asignaciones por sección
-            filteredStudents = filteredStudents.filter(student => 
-              student.assignedCourses.includes(courseName)
-            );
+            console.log('🔍 DEBUG Filtrado - filteredStudents por activeCourses:', filteredStudents.length);
+          }
+          
+          // Último fallback: mostrar todos los estudiantes si no hay ningún filtro que funcione
+          if (filteredStudents.length === 0) {
+            console.log('🔍 DEBUG Filtrado - Sin estudiantes, mostrando todos los disponibles');
+            filteredStudents = [...students];
           }
         } catch (e) {
-          // Si algo falla, usar filtro por curso como respaldo
-          if (courseName) {
-            filteredStudents = filteredStudents.filter(student => 
-              student.assignedCourses.includes(courseName)
-            );
-          }
+          console.error('🔍 DEBUG Filtrado - Error:', e);
+          // Si algo falla, mostrar todos los estudiantes
+          filteredStudents = [...students];
         }
       }
 
+      console.log('🔍 DEBUG Filtrado - FINAL availableStudents:', filteredStudents.length);
       setAvailableStudents(filteredStudents);
     } else {
       setAvailableStudents([]);
@@ -349,11 +389,13 @@ export default function ComunicacionesPage() {
       }
 
       // Cargar cursos y secciones reales del sistema usando LocalStorageManager
-      const coursesData = LocalStorageManager.getCourses();
-      const sectionsData = LocalStorageManager.getSections();
+      // Usar versiones con año actual para compatibilidad con carga masiva
+      const currentYear = new Date().getFullYear();
+      const coursesData = LocalStorageManager.getCoursesForYear(currentYear);
+      const sectionsData = LocalStorageManager.getSectionsForYear(currentYear);
       
-      console.log('🔍 DEBUG - Cursos cargados:', coursesData);
-      console.log('🔍 DEBUG - Secciones cargadas:', sectionsData);
+      console.log('🔍 DEBUG - Cursos cargados (año ' + currentYear + '):', coursesData);
+      console.log('🔍 DEBUG - Secciones cargadas (año ' + currentYear + '):', sectionsData);
       
       setCourses(coursesData);
       setSections(sectionsData);
@@ -367,7 +409,6 @@ export default function ComunicacionesPage() {
         const legacyAssignments = JSON.parse(localStorage.getItem('smart-student-teacher-assignments') || '[]');
         
         // 2. Buscar en el storage por año (nuevo formato)
-        const currentYear = new Date().getFullYear();
         const yearAssignments = LocalStorageManager.getTeacherAssignmentsForYear(currentYear);
         
         // Combinar todas las asignaciones
@@ -390,9 +431,14 @@ export default function ComunicacionesPage() {
         console.log('🔍 DEBUG - Total asignaciones combinadas:', teacherAssignments.length);
         
         // Buscar asignaciones del profesor actual
+        // Buscar por teacherId O teacherUsername (igual que en admin/page.tsx)
         const currentTeacherAssignments = teacherAssignments.filter((assignment: any) => 
-          assignment.teacherId === user.id || assignment.teacherId === user.username
+          assignment.teacherId === user.id || 
+          assignment.teacherId === user.username ||
+          assignment.teacherUsername === user.username ||
+          assignment.teacherUsername === user.id
         );
+        console.log('🔍 DEBUG - user.id:', user.id, 'user.username:', user.username);
         console.log('🔍 DEBUG - Asignaciones del profesor actual:', currentTeacherAssignments);
         
         // Obtener sectionIds únicos asignados al profesor
@@ -485,68 +531,90 @@ export default function ComunicacionesPage() {
     if (!user || user.role !== 'student') return;
 
     try {
-  const studentCommunications = allCommunications.filter(comm => {
+      const currentYear = new Date().getFullYear();
+      
+      // Obtener asignaciones del estudiante (primero con año, luego legacy)
+      let myAssignments: any[] = [];
+      const yearAssignments = localStorage.getItem(`smart-student-student-assignments-${currentYear}`);
+      const legacyAssignments = localStorage.getItem('smart-student-student-assignments');
+      
+      if (yearAssignments) {
+        const all = JSON.parse(yearAssignments);
+        myAssignments = all.filter((a: any) => a && (a.studentId === user.id || a.studentUsername === user.username));
+      }
+      if (myAssignments.length === 0 && legacyAssignments) {
+        const all = JSON.parse(legacyAssignments);
+        myAssignments = all.filter((a: any) => a && (a.studentId === user.id || a.studentUsername === user.username));
+      }
+      
+      // Obtener también datos del estudiante desde students-{year}
+      const studentsForYear = JSON.parse(localStorage.getItem(`smart-student-students-${currentYear}`) || '[]');
+      const studentData = studentsForYear.find((s: any) => s.id === user.id || s.username === user.username);
+      
+      // Si el estudiante tiene courseId/sectionId directo, usarlo
+      if (myAssignments.length === 0 && studentData?.courseId && studentData?.sectionId) {
+        myAssignments.push({
+          studentId: user.id,
+          courseId: studentData.courseId,
+          sectionId: studentData.sectionId
+        });
+      }
+      
+      console.log(`🔍 DEBUG Student ${user.username}: myAssignments =`, myAssignments);
+      
+      const studentCommunications = allCommunications.filter(comm => {
         // Comunicaciones dirigidas específicamente a este estudiante
-        if (comm.type === 'student' && comm.targetStudent === user.id) {
+        if (comm.type === 'student' && (comm.targetStudent === user.id || comm.targetStudent === user.username)) {
           return true;
         }
 
         // Comunicaciones dirigidas al curso y sección del estudiante
-        if (comm.type === 'course' && comm.targetCourse && comm.targetSection) {
-          // 1) Fuente primaria: asignaciones estudiante-sección
-          try {
-            const studentAssignmentsRaw = localStorage.getItem('smart-student-student-assignments');
-            if (studentAssignmentsRaw) {
-              const assignments: any[] = JSON.parse(studentAssignmentsRaw);
-              const myAssignments = assignments.filter(a => a && a.studentId === user.id);
-              if (myAssignments.length > 0) {
-                // Coincidencia estricta por courseId + sectionId
-                const matchCourseAndSection = myAssignments.some(a => a.courseId === comm.targetCourse && a.sectionId === comm.targetSection);
-                if (matchCourseAndSection) return true;
-
-                // Coincidencia relajada por sectionId (por si el courseId falta en la comunicación o en la asignación)
-                const matchSectionOnly = myAssignments.some(a => a.sectionId === comm.targetSection);
-                if (matchSectionOnly) return true;
-
-                // Fallback por nombre de sección cuando el perfil tiene solo nombre
-                const studentSectionName = (user as any).sectionName;
-                if (studentSectionName && comm.targetSectionName && studentSectionName === comm.targetSectionName) {
-                  return true;
-                }
-
-                // Tiene asignaciones pero ninguna coincide
-                return false;
-              }
+        if (comm.type === 'course' && comm.targetCourse) {
+          // 1) Verificar con asignaciones
+          if (myAssignments.length > 0) {
+            // Coincidencia por courseId + sectionId (si la comunicación tiene sección)
+            if (comm.targetSection) {
+              const matchCourseAndSection = myAssignments.some((a: any) => 
+                a.courseId === comm.targetCourse && a.sectionId === comm.targetSection
+              );
+              if (matchCourseAndSection) return true;
+            } else {
+              // La comunicación es para todo el curso (sin sección específica)
+              const matchCourse = myAssignments.some((a: any) => a.courseId === comm.targetCourse);
+              if (matchCourse) return true;
             }
-          } catch (e) {
-            console.warn('[Comunicaciones] No se pudo leer student-assignments para filtrar:', e);
+            
+            // No coincide con ninguna asignación
+            return false;
           }
 
-          // 2) Fuente secundaria: activeCourses (por id o por nombre legible, tolerando formato "Curso - Sección X")
+          // 2) Fuente secundaria: activeCourses del perfil
           const active = (user as any).activeCourses as string[] | undefined;
           if (active && active.length > 0) {
             const course = courses.find(c => c.id === comm.targetCourse);
             const courseName = course?.name || comm.targetCourseName || '';
             const normalizedActive = active.map(v => String(v));
+            
             const hasCourse = normalizedActive.some(str => {
               if (!str) return false;
-              if (str === comm.targetCourse) return true; // id exacto
-              if (courseName && (str === courseName || str.includes(courseName))) return true; // nombre exacto o incluido en "Curso - Sección"
+              if (str === comm.targetCourse) return true;
+              if (courseName && (str === courseName || str.includes(courseName))) return true;
               return false;
             });
-            if (!hasCourse) return false; // No pertenece a este curso
+            
+            if (!hasCourse) return false;
 
-            // Si coincide el curso por nombre/id, aceptamos sin bloquear por sección (algunos perfiles no incluyen sección en activeCourses)
-            // Si el perfil tiene sectionName y la comunicación trae targetSectionName, opcionalmente podemos reforzar
+            // Si tiene sectionName, verificar también
             const studentSectionName = (user as any).sectionName;
-            if (studentSectionName && comm.targetSectionName) {
+            if (comm.targetSection && studentSectionName && comm.targetSectionName) {
               return studentSectionName === comm.targetSectionName;
             }
-            return true;
+            return hasCourse;
           }
 
-          // 3) Sin datos de asignaciones ni activeCourses: incluir como fallback para no perder comunicaciones
-          return true;
+          // 3) Sin asignaciones ni activeCourses: NO mostrar (evitar que llegue a todos)
+          console.log(`⚠️ Student ${user.username} sin asignaciones, ignorando comunicación de curso`);
+          return false;
         }
 
         return false;
@@ -569,11 +637,57 @@ export default function ComunicacionesPage() {
 
     try {
       const currentYear = new Date().getFullYear();
-      // Obtener relaciones apoderado-estudiante
-      const guardianRelations = JSON.parse(localStorage.getItem(`smart-student-guardian-student-relations-${currentYear}`) || '[]');
-      const assignedStudentIds = guardianRelations
-        .filter((rel: any) => rel.guardianId === user.id)
-        .map((rel: any) => rel.studentId);
+      
+      // ============ BUSCAR ESTUDIANTES ASIGNADOS (igual que perfil-client.tsx) ============
+      let assignedStudentIds: string[] = [];
+      
+      // Prioridad 1: Buscar en smart-student-guardians-{year} (datos de carga masiva)
+      const guardiansForYear = JSON.parse(localStorage.getItem(`smart-student-guardians-${currentYear}`) || '[]');
+      const guardianFromYear = guardiansForYear.find((g: any) => 
+        g.username?.toLowerCase() === user.username?.toLowerCase() ||
+        g.id === user.id
+      );
+      
+      console.log(`🔍 DEBUG Guardian: ${user.username} (ID: ${user.id})`);
+      console.log(`🔍 DEBUG guardiansForYear (${currentYear}):`, guardiansForYear.length);
+      console.log(`🔍 DEBUG guardianFromYear:`, guardianFromYear);
+      
+      if (guardianFromYear?.studentIds && guardianFromYear.studentIds.length > 0) {
+        assignedStudentIds = guardianFromYear.studentIds;
+        console.log(`🔍 DEBUG studentIds desde guardiansForYear:`, assignedStudentIds);
+      }
+      
+      // Prioridad 2: Buscar en smart-student-guardian-student-relations-{year}
+      if (assignedStudentIds.length === 0) {
+        let guardianRelations = JSON.parse(localStorage.getItem(`smart-student-guardian-student-relations-${currentYear}`) || '[]');
+        if (guardianRelations.length === 0) {
+          guardianRelations = JSON.parse(localStorage.getItem('smart-student-guardian-student-relations') || '[]');
+        }
+        
+        assignedStudentIds = guardianRelations
+          .filter((rel: any) => rel.guardianId === user.id || rel.guardianUsername === user.username)
+          .map((rel: any) => rel.studentId);
+        
+        console.log(`🔍 DEBUG guardianRelations encontradas:`, guardianRelations.length);
+        console.log(`🔍 DEBUG studentIds desde relations:`, assignedStudentIds);
+      }
+      
+      // Prioridad 3: Buscar en smart-student-users (fullUserData.studentIds)
+      if (assignedStudentIds.length === 0) {
+        const storedUsers = localStorage.getItem('smart-student-users');
+        if (storedUsers) {
+          const usersData = JSON.parse(storedUsers);
+          const fullUserData = usersData.find((u: any) => 
+            u.username?.toLowerCase() === user.username?.toLowerCase()
+          );
+          if (fullUserData?.studentIds && fullUserData.studentIds.length > 0) {
+            assignedStudentIds = fullUserData.studentIds;
+            console.log(`🔍 DEBUG studentIds desde smart-student-users:`, assignedStudentIds);
+          }
+        }
+      }
+      
+      console.log(`🔍 DEBUG assignedStudentIds FINAL:`, assignedStudentIds);
       
       if (assignedStudentIds.length === 0) {
         setReceivedCommunications([]);
@@ -581,45 +695,153 @@ export default function ComunicacionesPage() {
         return;
       }
 
-      // Obtener información de estudiantes para mostrar nombres
+      // ============ OBTENER INFORMACIÓN DE ESTUDIANTES ============
       const storedUsers = localStorage.getItem('smart-student-users');
       const allUsers = storedUsers ? JSON.parse(storedUsers) : [];
+      
+      // Buscar también en smart-student-students-{year}
+      const studentsForYear = JSON.parse(localStorage.getItem(`smart-student-students-${currentYear}`) || '[]');
+      
       const studentMap = new Map<string, any>();
+      
+      // Agregar desde studentsForYear
+      studentsForYear
+        .filter((s: any) => assignedStudentIds.includes(s.id) || assignedStudentIds.includes(s.username))
+        .forEach((s: any) => studentMap.set(s.id, s));
+      
+      // Agregar desde allUsers si no están ya
       allUsers
-        .filter((u: any) => u.role === 'student' && assignedStudentIds.includes(u.id))
-        .forEach((u: any) => studentMap.set(u.id, u));
+        .filter((u: any) => (u.role === 'student' || u.type === 'student') && 
+          (assignedStudentIds.includes(u.id) || assignedStudentIds.includes(u.username)))
+        .forEach((u: any) => {
+          if (!studentMap.has(u.id)) {
+            studentMap.set(u.id, u);
+          }
+        });
 
-      // Obtener asignaciones de estudiantes
-      const studentAssignmentsRaw = localStorage.getItem('smart-student-student-assignments');
-      const studentAssignments = studentAssignmentsRaw ? JSON.parse(studentAssignmentsRaw) : [];
+      console.log(`🔍 DEBUG studentMap size:`, studentMap.size);
 
+      // ============ OBTENER ASIGNACIONES DE ESTUDIANTES ============
+      let studentAssignments: any[] = [];
+      const yearAssignments = localStorage.getItem(`smart-student-student-assignments-${currentYear}`);
+      const legacyAssignments = localStorage.getItem('smart-student-student-assignments');
+      
+      if (yearAssignments) {
+        studentAssignments = JSON.parse(yearAssignments);
+        console.log(`🔍 DEBUG usando student-assignments con año ${currentYear}:`, studentAssignments.length);
+      } else if (legacyAssignments) {
+        studentAssignments = JSON.parse(legacyAssignments);
+        console.log(`🔍 DEBUG usando student-assignments legacy:`, studentAssignments.length);
+      }
+      
+      // Si aún no hay, buscar en los propios estudiantes
+      if (studentAssignments.length === 0) {
+        console.log(`🔍 DEBUG No hay student-assignments, buscando en estudiantes...`);
+        
+        // Buscar en studentsForYear
+        studentsForYear
+          .filter((s: any) => assignedStudentIds.includes(s.id) || assignedStudentIds.includes(s.username))
+          .forEach((s: any) => {
+            if (s.courseId && s.sectionId) {
+              studentAssignments.push({
+                studentId: s.id,
+                courseId: s.courseId,
+                sectionId: s.sectionId
+              });
+            }
+          });
+        
+        // Buscar en allUsers
+        allUsers
+          .filter((u: any) => (u.role === 'student' || u.type === 'student') && 
+            (assignedStudentIds.includes(u.id) || assignedStudentIds.includes(u.username)))
+          .forEach((u: any) => {
+            if (u.courseId && u.sectionId) {
+              const exists = studentAssignments.find((a: any) => a.studentId === u.id);
+              if (!exists) {
+                studentAssignments.push({
+                  studentId: u.id,
+                  courseId: u.courseId,
+                  sectionId: u.sectionId
+                });
+              }
+            }
+            if (u.assignedCourses?.length > 0) {
+              u.assignedCourses.forEach((courseSection: string) => {
+                const parts = courseSection.split('-');
+                const exists = studentAssignments.find((a: any) => 
+                  a.studentId === u.id && a.courseId === parts[0]
+                );
+                if (!exists) {
+                  studentAssignments.push({
+                    studentId: u.id,
+                    courseId: parts[0],
+                    sectionId: parts[1] || parts[0]
+                  });
+                }
+              });
+            }
+          });
+        
+        console.log(`🔍 DEBUG asignaciones construidas:`, studentAssignments.length);
+      }
+
+      // ============ PROCESAR COMUNICACIONES ============
       const guardianCommunications: (Communication & { studentInfo?: { id: string; name: string; courseName?: string; sectionName?: string } })[] = [];
+
+      console.log(`🔍 DEBUG procesando ${allCommunications.length} comunicaciones...`);
 
       allCommunications.forEach(comm => {
         // Comunicaciones dirigidas específicamente a alguno de los estudiantes asignados
-        if (comm.type === 'student' && assignedStudentIds.includes(comm.targetStudent)) {
-          const student = studentMap.get(comm.targetStudent || '');
-          guardianCommunications.push({
-            ...comm,
-            studentInfo: student ? {
-              id: student.id,
-              name: student.displayName || student.username,
-              courseName: comm.targetCourseName,
-              sectionName: comm.targetSectionName
-            } : undefined
-          });
+        if (comm.type === 'student' && comm.targetStudent) {
+          // Verificar si el targetStudent está en assignedStudentIds (por id o username)
+          const isAssigned = assignedStudentIds.includes(comm.targetStudent) || 
+            Array.from(studentMap.values()).some((s: any) => 
+              s.username === comm.targetStudent && assignedStudentIds.includes(s.id)
+            );
+          
+          if (isAssigned) {
+            const student = studentMap.get(comm.targetStudent) || 
+              Array.from(studentMap.values()).find((s: any) => s.username === comm.targetStudent);
+            
+            console.log(`🔍 DEBUG Comunicación tipo student encontrada para:`, comm.targetStudent);
+            guardianCommunications.push({
+              ...comm,
+              studentInfo: student ? {
+                id: student.id,
+                name: student.displayName || student.name || student.username,
+                courseName: comm.targetCourseName,
+                sectionName: comm.targetSectionName
+              } : undefined
+            });
+          }
           return;
         }
 
         // Comunicaciones de curso: verificar si algún estudiante asignado pertenece al curso/sección
-        if (comm.type === 'course' && comm.targetCourse && comm.targetSection) {
+        if (comm.type === 'course' && comm.targetCourse) {
+          console.log(`🔍 DEBUG Comunicación tipo course: ${comm.targetCourse}/${comm.targetSection}`);
+          
           // Buscar qué estudiantes asignados al apoderado pertenecen a este curso/sección
-          const matchingStudents = studentAssignments.filter((a: any) => 
-            a && 
-            assignedStudentIds.includes(a.studentId) &&
-            a.courseId === comm.targetCourse && 
-            a.sectionId === comm.targetSection
-          );
+          const matchingStudents = studentAssignments.filter((a: any) => {
+            if (!a) return false;
+            
+            // Verificar que es un estudiante asignado al apoderado
+            const isAssigned = assignedStudentIds.includes(a.studentId) ||
+              Array.from(studentMap.keys()).includes(a.studentId);
+            
+            if (!isAssigned) return false;
+            
+            // Comparar curso
+            const courseMatch = a.courseId === comm.targetCourse;
+            
+            // Comparar sección (si existe en la comunicación)
+            const sectionMatch = !comm.targetSection || a.sectionId === comm.targetSection;
+            
+            return courseMatch && sectionMatch;
+          });
+
+          console.log(`🔍 DEBUG matchingStudents para ${comm.targetCourse}:`, matchingStudents.length);
 
           matchingStudents.forEach((assignment: any) => {
             const student = studentMap.get(assignment.studentId);
@@ -629,7 +851,7 @@ export default function ComunicacionesPage() {
                 id: `${comm.id}_${student.id}`, // ID único por estudiante para evitar duplicados en la UI
                 studentInfo: {
                   id: student.id,
-                  name: student.displayName || student.username,
+                  name: student.displayName || student.name || student.username,
                   courseName: comm.targetCourseName,
                   sectionName: comm.targetSectionName
                 }
@@ -663,24 +885,52 @@ export default function ComunicacionesPage() {
   };
 
   // Función para marcar comunicación como leída
-  const markCommunicationAsRead = (communicationId: string) => {
+  const markCommunicationAsRead = (communicationId: string, studentId?: string) => {
     if (!user) return;
 
     try {
+      // 🔧 CORRECCIÓN APODERADO: Extraer ID original y studentId si es un ID modificado con _studentId
+      // Las comunicaciones de curso para apoderados tienen formato: "originalId_studentId"
+      let originalCommId = communicationId;
+      let extractedStudentId = studentId;
+      
+      if (user.role === 'guardian' && communicationId.includes('_')) {
+        // Intentar extraer el ID original (todo antes del último _studentId)
+        const parts = communicationId.split('_');
+        if (parts.length >= 2) {
+          // El formato es: comm_timestamp_index_studentId o comm_timestamp_studentId
+          // Reconstruir el ID original removiendo el último segmento (studentId)
+          const lastPart = parts[parts.length - 1];
+          // Verificar si el último segmento es un studentId (usualmente un UUID o ID largo)
+          if (lastPart.length > 10 || lastPart.includes('-')) {
+            originalCommId = parts.slice(0, -1).join('_');
+            extractedStudentId = lastPart;
+            console.log(`🔧 [Guardian] Extracted original communication ID: ${originalCommId}, studentId: ${extractedStudentId} from ${communicationId}`);
+          }
+        }
+      }
+
+      // 🔧 CLAVE: Para apoderados con múltiples estudiantes, usar identificador compuesto
+      // Esto permite que cada instancia (por estudiante) sea independiente
+      const readByKey = (user.role === 'guardian' && extractedStudentId) 
+        ? `${user.id}_forStudent_${extractedStudentId}` 
+        : user.id;
+
       const updatedCommunications = communications.map(comm => {
-        if (comm.id === communicationId) {
+        // 🔧 Buscar tanto por ID original como por ID modificado
+        if (comm.id === communicationId || comm.id === originalCommId) {
           const readBy = comm.readBy || [];
-          if (!readBy.includes(user.id)) {
+          if (!readBy.includes(readByKey)) {
             return {
               ...comm,
-              readBy: [...readBy, user.id],
-              readAt: { ...(comm.readAt || {}), [user.id]: new Date().toISOString() }
+              readBy: [...readBy, readByKey],
+              readAt: { ...(comm.readAt || {}), [readByKey]: new Date().toISOString() }
             };
-          } else if (!comm.readAt || !comm.readAt[user.id]) {
+          } else if (!comm.readAt || !comm.readAt[readByKey]) {
             // Ya estaba marcado anteriormente; aseguremos timestamp
             return {
               ...comm,
-              readAt: { ...(comm.readAt || {}), [user.id]: new Date().toISOString() }
+              readAt: { ...(comm.readAt || {}), [readByKey]: new Date().toISOString() }
             };
           }
         }
@@ -701,7 +951,7 @@ export default function ComunicacionesPage() {
         loadGuardianCommunications(updatedCommunications);
       }
 
-      console.log(`📖 Communication ${communicationId} marked as read by ${user.username}`);
+      console.log(`📖 Communication ${communicationId} (original: ${originalCommId}) marked as read by ${user.username}`);
       // Notificar a otros módulos (dashboard/campana) para actualizar contadores
       try {
         window.dispatchEvent(new CustomEvent('studentCommunicationsUpdated', { detail: { action: 'read', userId: user.id, communicationId } }));
@@ -1067,13 +1317,13 @@ export default function ComunicacionesPage() {
   }, [memoizedCommunications, user?.username, searchTerm]);
 
   // Verificar que el usuario tenga acceso a comunicaciones
-  if (user?.role !== 'teacher' && user?.role !== 'student') {
+  if (user?.role !== 'teacher' && user?.role !== 'student' && user?.role !== 'guardian') {
     return (
       <div className="container mx-auto px-4 py-8">
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            {translate('teacherOnlyAccess') || 'Esta página es solo para profesores y estudiantes.'}
+            {translate('teacherOnlyAccess') || 'Esta página es solo para profesores, estudiantes y apoderados.'}
           </AlertDescription>
         </Alert>
       </div>
@@ -1584,9 +1834,13 @@ export default function ComunicacionesPage() {
             ) : (
               <div className="space-y-4">
                 {memoizedReceivedCommunications.map((communication: any, index) => {
-                  const isRead = communication.readBy?.includes(user.id);
-                  const senderInfo = getSenderInfo(communication.senderId);
+                  // 🔧 CORRECCIÓN: Para apoderados, verificar con identificador compuesto por estudiante
                   const studentInfo = communication.studentInfo;
+                  const readByKey = studentInfo?.id 
+                    ? `${user.id}_forStudent_${studentInfo.id}` 
+                    : user.id;
+                  const isRead = communication.readBy?.includes(readByKey) || communication.readBy?.includes(user.id);
+                  const senderInfo = getSenderInfo(communication.senderId);
                   
                   return (
                     <div

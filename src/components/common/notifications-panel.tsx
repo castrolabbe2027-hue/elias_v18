@@ -178,15 +178,163 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
     }
   };
 
-  // UTIL: Cargar comunicaciones recibidas del estudiante (mismo filtro que módulo de comunicaciones)
+  // UTIL: Cargar comunicaciones recibidas del estudiante o apoderado (mismo filtro que módulo de comunicaciones)
   const loadStudentCommunications = () => {
     try {
-      if (!user || user.role !== 'student') { setStudentCommunications([]); return; }
+      if (!user || (user.role !== 'student' && user.role !== 'guardian')) { 
+        setStudentCommunications([]); 
+        return; 
+      }
       const commRaw = localStorage.getItem('smart-student-communications');
       if (!commRaw) { setStudentCommunications([]); return; }
       const all: any[] = JSON.parse(commRaw);
-      const courses = JSON.parse(localStorage.getItem('smart-student-courses') || '[]');
-      const assignments = JSON.parse(localStorage.getItem('smart-student-student-assignments') || '[]');
+      const currentYear = new Date().getFullYear();
+      
+      // Obtener courses (probar con año primero, luego legacy)
+      let courses = JSON.parse(localStorage.getItem(`smart-student-courses-${currentYear}`) || '[]');
+      if (courses.length === 0) {
+        courses = JSON.parse(localStorage.getItem('smart-student-courses') || '[]');
+      }
+      
+      // Obtener student-assignments (probar con año primero, luego legacy)
+      let assignments = JSON.parse(localStorage.getItem(`smart-student-student-assignments-${currentYear}`) || '[]');
+      if (assignments.length === 0) {
+        assignments = JSON.parse(localStorage.getItem('smart-student-student-assignments') || '[]');
+      }
+
+      // Para apoderados: obtener estudiantes asignados
+      if (user.role === 'guardian') {
+        // ============ BUSCAR ESTUDIANTES ASIGNADOS (igual que perfil-client.tsx) ============
+        let assignedStudentIds: string[] = [];
+        
+        // Prioridad 1: Buscar en smart-student-guardians-{year}
+        const guardiansForYear = JSON.parse(localStorage.getItem(`smart-student-guardians-${currentYear}`) || '[]');
+        const guardianFromYear = guardiansForYear.find((g: any) => 
+          g.username?.toLowerCase() === user.username?.toLowerCase() ||
+          g.id === user.id
+        );
+        
+        if (guardianFromYear?.studentIds && guardianFromYear.studentIds.length > 0) {
+          assignedStudentIds = guardianFromYear.studentIds;
+        }
+        
+        // Prioridad 2: Buscar en relaciones
+        if (assignedStudentIds.length === 0) {
+          let guardianRelations = JSON.parse(localStorage.getItem(`smart-student-guardian-student-relations-${currentYear}`) || '[]');
+          if (guardianRelations.length === 0) {
+            guardianRelations = JSON.parse(localStorage.getItem('smart-student-guardian-student-relations') || '[]');
+          }
+          assignedStudentIds = guardianRelations
+            .filter((rel: any) => rel.guardianId === user.id || rel.guardianUsername === user.username)
+            .map((rel: any) => rel.studentId);
+        }
+        
+        // Prioridad 3: Buscar en smart-student-users
+        if (assignedStudentIds.length === 0) {
+          const storedUsers = localStorage.getItem('smart-student-users');
+          if (storedUsers) {
+            const usersData = JSON.parse(storedUsers);
+            const fullUserData = usersData.find((u: any) => 
+              u.username?.toLowerCase() === user.username?.toLowerCase()
+            );
+            if (fullUserData?.studentIds && fullUserData.studentIds.length > 0) {
+              assignedStudentIds = fullUserData.studentIds;
+            }
+          }
+        }
+        
+        if (assignedStudentIds.length === 0) {
+          setStudentCommunications([]);
+          return;
+        }
+
+        // Obtener información de estudiantes
+        const storedUsers = localStorage.getItem('smart-student-users');
+        const allUsers = storedUsers ? JSON.parse(storedUsers) : [];
+        const studentsForYear = JSON.parse(localStorage.getItem(`smart-student-students-${currentYear}`) || '[]');
+        
+        const studentMap = new Map<string, any>();
+        
+        // Agregar desde studentsForYear
+        studentsForYear
+          .filter((s: any) => assignedStudentIds.includes(s.id) || assignedStudentIds.includes(s.username))
+          .forEach((s: any) => studentMap.set(s.id, s));
+        
+        // Agregar desde allUsers
+        allUsers
+          .filter((u: any) => (u.role === 'student' || u.type === 'student') && 
+            (assignedStudentIds.includes(u.id) || assignedStudentIds.includes(u.username)))
+          .forEach((u: any) => {
+            if (!studentMap.has(u.id)) studentMap.set(u.id, u);
+          });
+
+        // 🔧 CORRECCIÓN: Crear instancias separadas por cada estudiante para comunicaciones de curso
+        const guardianCommunications: any[] = [];
+        all.forEach((comm: any) => {
+          // Comunicaciones dirigidas específicamente a alguno de los estudiantes asignados
+          if (comm.type === 'student' && comm.targetStudent) {
+            const isAssigned = assignedStudentIds.includes(comm.targetStudent) ||
+              Array.from(studentMap.values()).some((s: any) => 
+                s.username === comm.targetStudent && assignedStudentIds.includes(s.id)
+              );
+            
+            if (isAssigned) {
+              const student = studentMap.get(comm.targetStudent) ||
+                Array.from(studentMap.values()).find((s: any) => s.username === comm.targetStudent);
+              guardianCommunications.push({
+                ...comm,
+                id: `${comm.id}_${student?.id || comm.targetStudent}`, // ID único por estudiante
+                studentInfo: student ? { id: student.id, name: student.displayName || student.name || student.username } : null
+              });
+            }
+            return;
+          }
+          // Comunicaciones de curso: crear una instancia por cada estudiante que pertenece al curso/sección
+          if (comm.type === 'course' && comm.targetCourse) {
+            const studentAssignmentsForGuardian = assignments.filter((a: any) => 
+              a && (assignedStudentIds.includes(a.studentId) || Array.from(studentMap.keys()).includes(a.studentId))
+            );
+            // 🔧 Encontrar TODOS los estudiantes que coinciden, no solo el primero
+            const matchingAssignments = studentAssignmentsForGuardian.filter((a: any) => {
+              const courseMatch = a.courseId === comm.targetCourse;
+              const sectionMatch = !comm.targetSection || a.sectionId === comm.targetSection;
+              return courseMatch && sectionMatch;
+            });
+            
+            // Crear una instancia por cada estudiante
+            matchingAssignments.forEach((assignment: any) => {
+              const student = studentMap.get(assignment.studentId);
+              if (student) {
+                const course = courses.find((c: any) => c.id === comm.targetCourse);
+                guardianCommunications.push({
+                  ...comm,
+                  id: `${comm.id}_${student.id}`, // ID único por estudiante para evitar duplicados en la UI
+                  studentInfo: { 
+                    id: student.id, 
+                    name: student.displayName || student.name || student.username,
+                    courseName: course?.name || comm.targetCourseName,
+                    sectionName: comm.targetSectionName
+                  }
+                });
+              }
+            });
+          }
+        });
+
+        // 🔧 Filtrar usando identificador compuesto por estudiante
+        const received = guardianCommunications
+          .filter((c: any) => {
+            const studentId = c.studentInfo?.id;
+            const readByKey = studentId ? `${user.id}_forStudent_${studentId}` : user.id;
+            return !((c.readBy || []).includes(readByKey)) && !((c.readBy || []).includes(user.id));
+          })
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 5);
+        setStudentCommunications(received);
+        return;
+      }
+
+      // Para estudiantes: lógica existente
       // Fallback por username si no existiera id en algunas asignaciones
       const myAssignments = assignments.filter((a: any) => a && (a.studentId === user.id || a.studentUsername === (user as any).username));
       const active = (user as any).activeCourses as string[] | undefined;
@@ -821,6 +969,14 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
             setPendingTasks([]);
             
             console.log(`[NotificationsPanel] ✅ Teacher data loaded synchronously`);
+          } else if (user.role === 'guardian') {
+            // 🔧 NUEVO: Carga sincronizada para apoderados
+            console.log(`[NotificationsPanel] 👪 Loading guardian data synchronously...`);
+            
+            // Los apoderados solo ven comunicaciones de sus estudiantes
+            loadStudentCommunications();
+            
+            console.log(`[NotificationsPanel] ✅ Guardian data loaded synchronously`);
           }
         } catch (error) {
           console.error(`[NotificationsPanel] ❌ Error during synchronized load:`, error);
@@ -894,7 +1050,7 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
         }
       }
       if (e.key === 'smart-student-communications') {
-        if (user?.role === 'student') {
+        if (user?.role === 'student' || user?.role === 'guardian') {
           loadStudentCommunications();
         }
       }
@@ -2114,6 +2270,115 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
       } catch (error) {
         console.error('Error marking all notifications as read for teacher:', error);
       }
+    } else if (user?.role === 'guardian') {
+      // 🔧 NUEVO: Lógica para marcar todas las comunicaciones como leídas para apoderados
+      try {
+        let hasUpdates = false;
+        
+        const commRaw = localStorage.getItem('smart-student-communications');
+        if (commRaw && user?.id) {
+          const all: any[] = JSON.parse(commRaw);
+          const currentYear = new Date().getFullYear();
+          const assignments = JSON.parse(localStorage.getItem(`smart-student-student-assignments-${currentYear}`) || 
+            localStorage.getItem('smart-student-student-assignments') || '[]');
+          
+          // Obtener estudiantes asignados al apoderado
+          let assignedStudentIds: string[] = [];
+          
+          // Prioridad 1: smart-student-guardians-{year}
+          const guardiansForYear = JSON.parse(localStorage.getItem(`smart-student-guardians-${currentYear}`) || '[]');
+          const guardianFromYear = guardiansForYear.find((g: any) => 
+            g.username?.toLowerCase() === user.username?.toLowerCase() || g.id === user.id
+          );
+          if (guardianFromYear?.studentIds?.length > 0) {
+            assignedStudentIds = guardianFromYear.studentIds;
+          }
+          
+          // Prioridad 2: guardian-student-relations
+          if (assignedStudentIds.length === 0) {
+            let guardianRelations = JSON.parse(localStorage.getItem(`smart-student-guardian-student-relations-${currentYear}`) || '[]');
+            if (guardianRelations.length === 0) {
+              guardianRelations = JSON.parse(localStorage.getItem('smart-student-guardian-student-relations') || '[]');
+            }
+            assignedStudentIds = guardianRelations
+              .filter((rel: any) => rel.guardianId === user.id || rel.guardianUsername === user.username)
+              .map((rel: any) => rel.studentId);
+          }
+          
+          // Prioridad 3: smart-student-users
+          if (assignedStudentIds.length === 0) {
+            const storedUsers = localStorage.getItem('smart-student-users');
+            if (storedUsers) {
+              const usersData = JSON.parse(storedUsers);
+              const fullUserData = usersData.find((u: any) => 
+                u.username?.toLowerCase() === user.username?.toLowerCase()
+              );
+              if (fullUserData?.studentIds?.length > 0) {
+                assignedStudentIds = fullUserData.studentIds;
+              }
+            }
+          }
+          
+          const updatedAll = all.map(c => {
+            // Para comunicaciones de estudiante específico
+            if (c.type === 'student' && assignedStudentIds.includes(c.targetStudent)) {
+              const readByKey = `${user.id}_forStudent_${c.targetStudent}`;
+              const readBy = c.readBy || [];
+              if (!readBy.includes(readByKey) && !readBy.includes(user.id)) {
+                hasUpdates = true;
+                return { ...c, readBy: [...readBy, readByKey], readAt: { ...(c.readAt || {}), [readByKey]: new Date().toISOString() } };
+              }
+            }
+            
+            // Para comunicaciones de curso
+            if (c.type === 'course' && c.targetCourse) {
+              const studentAssignmentsForGuardian = assignments.filter((a: any) => 
+                a && assignedStudentIds.includes(a.studentId)
+              );
+              const matchingAssignments = studentAssignmentsForGuardian.filter((a: any) => {
+                const courseMatch = a.courseId === c.targetCourse;
+                const sectionMatch = !c.targetSection || a.sectionId === c.targetSection;
+                return courseMatch && sectionMatch;
+              });
+              
+              // Marcar como leída para cada estudiante que pertenece al curso
+              let newReadBy = [...(c.readBy || [])];
+              let newReadAt = { ...(c.readAt || {}) };
+              matchingAssignments.forEach((assignment: any) => {
+                const readByKey = `${user.id}_forStudent_${assignment.studentId}`;
+                if (!newReadBy.includes(readByKey)) {
+                  hasUpdates = true;
+                  newReadBy.push(readByKey);
+                  newReadAt[readByKey] = new Date().toISOString();
+                }
+              });
+              
+              if (newReadBy.length > (c.readBy || []).length) {
+                return { ...c, readBy: newReadBy, readAt: newReadAt };
+              }
+            }
+            
+            return c;
+          });
+          
+          if (hasUpdates) {
+            localStorage.setItem('smart-student-communications', JSON.stringify(updatedAll));
+            loadStudentCommunications();
+            
+            // Disparar eventos para actualizar contadores
+            window.dispatchEvent(new CustomEvent('studentCommunicationsUpdated', { detail: { action: 'mark_all_read' } }));
+            window.dispatchEvent(new CustomEvent('updateDashboardCounts', {
+              detail: { userRole: user.role, action: 'mark_all_read' }
+            }));
+          }
+        }
+        
+        setTimeout(() => setIsMarking(false), 500);
+        setOpen(false);
+      } catch (error) {
+        console.error('Error marking all communications as read for guardian:', error);
+        setTimeout(() => setIsMarking(false), 500);
+      }
     }
   };
 
@@ -2177,8 +2442,10 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
             <CardHeader className="pb-2 pt-4 px-4 flex-shrink-0">
               <CardTitle className="text-lg font-semibold flex items-center justify-between">
                 <span>{translate('notifications')}</span>
+                {/* Botón Marcar todo como leído - Para estudiantes, profesores y apoderados */}
                 {((user?.role === 'student' && (unreadComments.length > 0 || taskNotifications.length > 0 || (studentCommunications.filter(c => !(c.readBy||[]).includes(user?.id)).length > 0))) ||
-                  (user?.role === 'teacher' && (unreadStudentComments.length > 0 || pendingGrading.length > 0 || taskNotifications.length > 0))) && (
+                  (user?.role === 'teacher' && (unreadStudentComments.length > 0 || pendingGrading.length > 0 || taskNotifications.length > 0)) ||
+                  (user?.role === 'guardian' && studentCommunications.length > 0)) && (
                   <Button 
                     variant="ghost" 
                     size="sm"
@@ -2358,13 +2625,18 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
                     </>
                   ) : (
                     <div className="divide-y divide-border">
-                      {/* 0. COMUNICACIONES (NUEVA SECCIÓN) */}
-                      {user?.role === 'student' && studentCommunications.length > 0 && (
+                      {/* 0. COMUNICACIONES (NUEVA SECCIÓN) - Para estudiantes y apoderados */}
+                      {(user?.role === 'student' || user?.role === 'guardian') && studentCommunications.length > 0 && (
                         <>
                           <div className="px-4 py-2 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-400 dark:border-red-500">
                             <h3 className="text-sm font-medium text-red-800 dark:text-red-200 flex items-center gap-2">
                               <Megaphone className="h-4 w-4" />
-                              {translate('communicationsSection') || 'Comunicaciones'} ({studentCommunications.filter(c => !(c.readBy||[]).includes(user?.id)).length})
+                              {/* 🔧 CORRECCIÓN: Usar identificador compuesto para contar no leídas */}
+                              {translate('communicationsSection') || 'Comunicaciones'} ({studentCommunications.filter(c => {
+                                const studentId = c.studentInfo?.id;
+                                const readByKey = (user?.role === 'guardian' && studentId) ? `${user.id}_forStudent_${studentId}` : user?.id;
+                                return !((c.readBy||[]).includes(readByKey)) && !((c.readBy||[]).includes(user?.id));
+                              }).length})
                             </h3>
                           </div>
                           {studentCommunications.map(comm => {
@@ -2382,6 +2654,8 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
                               'El profesor ha compartido una presentación de clase.',
                               'The teacher has shared a class presentation.'
                             ];
+                            // Para apoderados: mostrar info del estudiante
+                            const studentInfo = comm.studentInfo;
                             return (
                             <div key={comm.id} className="p-4 hover:bg-muted/50">
                               <div className="flex items-start gap-3">
@@ -2409,12 +2683,28 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
                                         );
                                       })()}
                                     </div>
-                                    <Badge variant="outline" className={`shrink-0 text-xs ${(!(comm.readBy||[]).includes(user?.id)) ? 'border-red-300 text-red-700 bg-red-50 dark:border-red-600 dark:text-red-300 dark:bg-red-900/30' : 'border-gray-200 text-gray-600 bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900/20'}`}>
-                                      {(!(comm.readBy||[]).includes(user?.id)) ? translate('unreadCommunication') || 'Sin leer' : translate('readCommunication') || 'Leído'}
-                                    </Badge>
+                                    {/* 🔧 CORRECCIÓN: Usar identificador compuesto para verificar estado de lectura */}
+                                    {(() => {
+                                      const studentId = comm.studentInfo?.id;
+                                      const readByKey = (user?.role === 'guardian' && studentId) 
+                                        ? `${user.id}_forStudent_${studentId}` 
+                                        : user?.id;
+                                      const isUnread = !((comm.readBy||[]).includes(readByKey)) && !((comm.readBy||[]).includes(user?.id));
+                                      return (
+                                        <Badge variant="outline" className={`shrink-0 text-xs ${isUnread ? 'border-red-300 text-red-700 bg-red-50 dark:border-red-600 dark:text-red-300 dark:bg-red-900/30' : 'border-gray-200 text-gray-600 bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900/20'}`}>
+                                          {isUnread ? translate('unreadCommunication') || 'Sin leer' : translate('readCommunication') || 'Leído'}
+                                        </Badge>
+                                      );
+                                    })()}
                                   </div>
+                                  {/* Para apoderados: mostrar nombre del estudiante */}
+                                  {user?.role === 'guardian' && studentInfo && (
+                                    <p className="text-xs text-purple-600 dark:text-purple-300 mt-1 font-medium truncate">
+                                      👤 {studentInfo.name}{studentInfo.courseName ? ` (${studentInfo.courseName} ${studentInfo.sectionName || ''})` : ''}
+                                    </p>
+                                  )}
                                   {/* Meta: curso-sección en una línea y debajo profesor • fecha */}
-                                  {csLabel ? (
+                                  {csLabel && !studentInfo ? (
                                     <p className="text-xs text-muted-foreground mt-1 truncate">
                                       <span className="font-medium text-red-700 dark:text-red-300">{csLabel}</span>
                                     </p>
@@ -2435,16 +2725,39 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
                                         const raw = localStorage.getItem('smart-student-communications');
                                         if (!raw) return;
                                         const list = JSON.parse(raw);
+                                        
+                                        // 🔧 CORRECCIÓN APODERADO: Extraer ID original y studentId si es un ID modificado con _studentId
+                                        let originalCommId = comm.id;
+                                        let extractedStudentId = comm.studentInfo?.id;
+                                        
+                                        if (user.role === 'guardian' && comm.id.includes('_')) {
+                                          const parts = comm.id.split('_');
+                                          if (parts.length >= 2) {
+                                            const lastPart = parts[parts.length - 1];
+                                            if (lastPart.length > 10 || lastPart.includes('-')) {
+                                              originalCommId = parts.slice(0, -1).join('_');
+                                              extractedStudentId = extractedStudentId || lastPart;
+                                              console.log(`🔧 [Guardian NotificationsPanel] Extracted original ID: ${originalCommId}, studentId: ${extractedStudentId}`);
+                                            }
+                                          }
+                                        }
+                                        
+                                        // 🔧 Usar identificador compuesto para apoderados con múltiples estudiantes
+                                        const readByKey = (user.role === 'guardian' && extractedStudentId) 
+                                          ? `${user.id}_forStudent_${extractedStudentId}` 
+                                          : user.id;
+                                        
                                         const updated = list.map((c: any) => {
-                                          if (c.id !== comm.id) return c;
+                                          // 🔧 Buscar tanto por ID original como por ID modificado
+                                          if (c.id !== comm.id && c.id !== originalCommId) return c;
                                           const readBy = c.readBy || [];
-                                          if (readBy.includes(user.id)) return c;
-                                          return { ...c, readBy: [...readBy, user.id], readAt: { ...(c.readAt || {}), [user.id]: new Date().toISOString() } };
+                                          if (readBy.includes(readByKey)) return c;
+                                          return { ...c, readBy: [...readBy, readByKey], readAt: { ...(c.readAt || {}), [readByKey]: new Date().toISOString() } };
                                         });
                                         localStorage.setItem('smart-student-communications', JSON.stringify(updated));
                                         // Actualizar panel inmediatamente y notificar
                                         loadStudentCommunications();
-                                        window.dispatchEvent(new CustomEvent('studentCommunicationsUpdated', { detail: { action: 'read', id: comm.id } }));
+                                        window.dispatchEvent(new CustomEvent('studentCommunicationsUpdated', { detail: { action: 'read', id: originalCommId } }));
                                         window.dispatchEvent(new CustomEvent('updateDashboardCounts', { detail: { source: 'communications', action: 'read_one' } }));
                                       } catch {}
                                     }}>
@@ -2729,6 +3042,170 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
                 </div>
               )}
               
+              {/* Guardian: Communications Section */}
+              {user?.role === 'guardian' && (
+                <div>
+                  {studentCommunications.length === 0 ? (
+                    <div className="py-8 px-6 text-center">
+                      <div className="relative">
+                        <div className="mx-auto w-24 h-24 mb-6 bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-900/30 dark:to-emerald-900/30 rounded-full flex items-center justify-center shadow-lg">
+                          <div className="w-16 h-16 bg-gradient-to-br from-green-200 to-emerald-200 dark:from-green-800/40 dark:to-emerald-800/40 rounded-full flex items-center justify-center">
+                            <span className="text-2xl animate-bounce">👨‍👩‍👧</span>
+                          </div>
+                        </div>
+                        <div className="space-y-3 mb-6">
+                          <h3 className="text-lg font-semibold text-green-800 dark:text-green-200">
+                            {translate('allCaughtUpTitle') || 'Todo al día'}
+                          </h3>
+                          <p className="text-gray-600 dark:text-gray-300 text-sm">
+                            {translate('noCommunicationsMessage') || 'No hay comunicaciones pendientes'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border">
+                      {/* COMUNICACIONES - Para apoderados - MISMO FORMATO QUE ESTUDIANTE */}
+                      <div className="px-4 py-2 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-400 dark:border-red-500">
+                        <h3 className="text-sm font-medium text-red-800 dark:text-red-200 flex items-center gap-2">
+                          <Megaphone className="h-4 w-4" />
+                          {translate('communicationsSection') || 'Comunicaciones'} ({studentCommunications.filter(c => {
+                            const studentId = c.studentInfo?.id;
+                            const readByKey = studentId ? `${user.id}_forStudent_${studentId}` : user.id;
+                            return !((c.readBy||[]).includes(readByKey)) && !((c.readBy||[]).includes(user?.id));
+                          }).length})
+                        </h3>
+                      </div>
+                      {studentCommunications.map(comm => {
+                        const coursesRaw = typeof window !== 'undefined' ? localStorage.getItem('smart-student-courses') : null;
+                        const sectionsRaw = typeof window !== 'undefined' ? localStorage.getItem('smart-student-sections') : null;
+                        const courses = coursesRaw ? JSON.parse(coursesRaw) : [];
+                        const sections = sectionsRaw ? JSON.parse(sectionsRaw) : [];
+                        const courseName = comm.targetCourseName || courses.find((c: any) => c.id === comm.targetCourse)?.name || '';
+                        const sectionName = comm.targetSectionName || sections.find((s: any) => s.id === comm.targetSection)?.name || '';
+                        const csLabel = [courseName, sectionName].filter(Boolean).join(' ');
+                        const isSlideShare = !!(comm?.attachment?.type === 'slide');
+                        const defaultShareMsgs = [
+                          'El profesor ha compartido una presentación de clase.',
+                          'The teacher has shared a class presentation.'
+                        ];
+                        const studentInfo = comm.studentInfo;
+                        
+                        return (
+                          <div key={comm.id} className="p-4 hover:bg-muted/50">
+                            <div className="flex items-start gap-3">
+                              <div className="bg-red-100 dark:bg-red-800 p-2 rounded-full">
+                                <Megaphone className="h-4 w-4 text-red-600 dark:text-red-300" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-start justify-between gap-2">
+                                  {/* Título dividido en 2 líneas: prefijo y tema - IGUAL QUE ESTUDIANTE */}
+                                  <div className="min-w-0 flex-1">
+                                    {(() => {
+                                      const raw = String(comm.title || '');
+                                      const parts = raw.split(':');
+                                      const prefix = parts.shift()?.trim() || raw;
+                                      const topic = parts.join(':').trim();
+                                      return (
+                                        <div className="text-red-800 dark:text-red-200">
+                                          <span className="block font-medium text-sm truncate">{prefix}</span>
+                                          {topic && (
+                                            <span className="block text-[13px] text-red-700 dark:text-red-300 break-words">
+                                              {topic}
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+                                  {/* Badge de estado - MISMO FORMATO QUE ESTUDIANTE */}
+                                  {(() => {
+                                    const studentId = comm.studentInfo?.id;
+                                    const readByKey = studentId ? `${user.id}_forStudent_${studentId}` : user.id;
+                                    const isUnread = !((comm.readBy||[]).includes(readByKey)) && !((comm.readBy||[]).includes(user?.id));
+                                    return (
+                                      <Badge variant="outline" className={`shrink-0 text-xs ${isUnread ? 'border-red-300 text-red-700 bg-red-50 dark:border-red-600 dark:text-red-300 dark:bg-red-900/30' : 'border-gray-200 text-gray-600 bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-900/20'}`}>
+                                        {isUnread ? translate('unreadCommunication') || 'Sin leer' : translate('readCommunication') || 'Leído'}
+                                      </Badge>
+                                    );
+                                  })()}
+                                </div>
+                                {/* Para apoderados: mostrar nombre del estudiante */}
+                                {studentInfo && (
+                                  <p className="text-xs text-purple-600 dark:text-purple-300 mt-1 font-medium truncate">
+                                    👤 {studentInfo.name}{studentInfo.courseName ? ` (${studentInfo.courseName} ${studentInfo.sectionName || ''})` : ''}
+                                  </p>
+                                )}
+                                {/* Meta: curso-sección en una línea y debajo profesor • fecha */}
+                                {csLabel && !studentInfo ? (
+                                  <p className="text-xs text-muted-foreground mt-1 truncate">
+                                    <span className="font-medium text-red-700 dark:text-red-300">{csLabel}</span>
+                                  </p>
+                                ) : null}
+                                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                  {getDisplayNameById(comm.senderId)} • {formatDate(comm.createdAt)}
+                                </p>
+                                {/* Adelanto del contenido para mejor claridad */}
+                                {comm.content && !isSlideShare && !defaultShareMsgs.includes(String(comm.content).trim()) ? (
+                                  <p className="text-sm text-muted-foreground mt-1 line-clamp-2 break-words">
+                                    {comm.content}
+                                  </p>
+                                ) : null}
+                                <div className="mt-2">
+                                  <Link href={`/dashboard/comunicaciones?commId=${encodeURIComponent(comm.id)}#open`} className="inline-block mt-1 text-xs text-red-600 dark:text-red-300 hover:underline" onClick={(e) => {
+                                    try {
+                                      if (!user?.id) return;
+                                      const raw = localStorage.getItem('smart-student-communications');
+                                      if (!raw) return;
+                                      const list = JSON.parse(raw);
+                                      
+                                      // Extraer ID original y studentId si es un ID modificado con _studentId
+                                      let originalCommId = comm.id;
+                                      let extractedStudentId = comm.studentInfo?.id;
+                                      
+                                      if (comm.id.includes('_')) {
+                                        const parts = comm.id.split('_');
+                                        if (parts.length >= 2) {
+                                          const lastPart = parts[parts.length - 1];
+                                          if (lastPart.length > 10 || lastPart.includes('-')) {
+                                            originalCommId = parts.slice(0, -1).join('_');
+                                            extractedStudentId = extractedStudentId || lastPart;
+                                          }
+                                        }
+                                      }
+                                      
+                                      // Usar identificador compuesto
+                                      const readByKey = extractedStudentId 
+                                        ? `${user.id}_forStudent_${extractedStudentId}` 
+                                        : user.id;
+                                      
+                                      const idx = list.findIndex((c: any) => c.id === originalCommId);
+                                      if (idx !== -1 && !(list[idx].readBy || []).includes(readByKey)) {
+                                        list[idx].readBy = [...(list[idx].readBy || []), readByKey];
+                                        localStorage.setItem('smart-student-communications', JSON.stringify(list));
+                                        
+                                        loadStudentCommunications();
+                                        window.dispatchEvent(new CustomEvent('studentCommunicationsUpdated'));
+                                        window.dispatchEvent(new CustomEvent('updateDashboardCounts', {
+                                          detail: { userRole: 'guardian' }
+                                        }));
+                                      }
+                                    } catch (err) {
+                                      console.error('Error marking communication as read:', err);
+                                    }
+                                  }}>
+                                    {translate('viewCommunicationButton') || 'Ver comunicación'}
+                                  </Link>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
               
               {/* Teacher: Submissions to review */}
               {user?.role === 'teacher' && (

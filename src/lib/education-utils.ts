@@ -317,13 +317,27 @@ export class LocalStorageManager {
   static getCoursesForYear(year: number) {
     const key = this.keyWithYear(this.KEYS.COURSES, year);
     // fallback: if not found, try non-suffixed
-    const raw = localStorage.getItem(key) ?? localStorage.getItem(this.KEYS.COURSES);
-    return JSON.parse(raw || '[]');
+    const rawYear = localStorage.getItem(key);
+    const rawLegacy = localStorage.getItem(this.KEYS.COURSES);
+    
+    // Si hay datos por año, usarlos y sincronizar con legacy si está vacío
+    if (rawYear) {
+      const parsed = JSON.parse(rawYear);
+      if (parsed.length > 0 && (!rawLegacy || rawLegacy === '[]')) {
+        try { localStorage.setItem(this.KEYS.COURSES, rawYear); } catch {}
+      }
+      return parsed;
+    }
+    
+    return JSON.parse(rawLegacy || '[]');
   }
 
   static setCoursesForYear(year: number, courses: any[]) {
     const key = this.keyWithYear(this.KEYS.COURSES, year);
-    localStorage.setItem(key, JSON.stringify(courses));
+    const value = JSON.stringify(courses);
+    localStorage.setItem(key, value);
+    // Sincronizar con storage legacy para compatibilidad
+    try { localStorage.setItem(this.KEYS.COURSES, value); } catch {}
   }
 
   static getSections() {
@@ -336,13 +350,28 @@ export class LocalStorageManager {
 
   static getSectionsForYear(year: number) {
     const key = this.keyWithYear(this.KEYS.SECTIONS, year);
-    const raw = localStorage.getItem(key) ?? localStorage.getItem(this.KEYS.SECTIONS);
-    return JSON.parse(raw || '[]');
+    // fallback: if not found, try non-suffixed
+    const rawYear = localStorage.getItem(key);
+    const rawLegacy = localStorage.getItem(this.KEYS.SECTIONS);
+    
+    // Si hay datos por año, usarlos y sincronizar con legacy si está vacío
+    if (rawYear) {
+      const parsed = JSON.parse(rawYear);
+      if (parsed.length > 0 && (!rawLegacy || rawLegacy === '[]')) {
+        try { localStorage.setItem(this.KEYS.SECTIONS, rawYear); } catch {}
+      }
+      return parsed;
+    }
+    
+    return JSON.parse(rawLegacy || '[]');
   }
 
   static setSectionsForYear(year: number, sections: any[]) {
     const key = this.keyWithYear(this.KEYS.SECTIONS, year);
-    localStorage.setItem(key, JSON.stringify(sections));
+    const value = JSON.stringify(sections);
+    localStorage.setItem(key, value);
+    // Sincronizar con storage legacy para compatibilidad
+    try { localStorage.setItem(this.KEYS.SECTIONS, value); } catch {}
   }
 
   static getSubjects() {
