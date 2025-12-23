@@ -4093,12 +4093,12 @@ export default function Configuration() {
     setResetSystemProgress({
       phase: translate('resetProgressInitializing') || 'Preparando...',
       current: 0,
-      total: 13
+      total: 15
     });
     
     setShowResetProgressModal(true);
     
-    const totalSteps = 13; // 13 pasos reales (sin incluir "Finalizar" como paso separado)
+    const totalSteps = 15; // 15 pasos reales (incluyendo apoderados y relaciones)
     let currentStep = 0;
 
     const updateProgress = (phaseKey: string) => {
@@ -4173,6 +4173,18 @@ export default function Configuration() {
       LocalStorageManager.setStudentAssignmentsForYear(selectedYear, []);
       localStorage.removeItem('smart-student-student-assignments');
       console.log('✅ Asignaciones de estudiantes eliminadas');
+
+      // Paso 9.1: Eliminar apoderados de LocalStorage
+      updateProgress('resetProgressGuardians');
+      LocalStorageManager.setGuardiansForYear(selectedYear, []);
+      localStorage.removeItem('smart-student-guardians');
+      console.log('✅ Apoderados eliminados');
+
+      // Paso 9.2: Eliminar relaciones apoderado-estudiante
+      updateProgress('resetProgressGuardianRelations');
+      LocalStorageManager.setGuardianStudentRelationsForYear(selectedYear, []);
+      localStorage.removeItem('smart-student-guardian-students');
+      console.log('✅ Relaciones apoderado-estudiante eliminadas');
 
       // Paso 10: Eliminar calificaciones de LocalStorage
       updateProgress('resetProgressGradesLS');

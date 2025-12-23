@@ -1915,6 +1915,8 @@
     "resetProgressSections": "Eliminando secciones...",
     "resetProgressSubjects": "Eliminando asignaturas...",
     "resetProgressStudentAssignments": "Eliminando asignaciones de estudiantes...",
+    "resetProgressGuardians": "Eliminando apoderados...",
+    "resetProgressGuardianRelations": "Eliminando relaciones apoderado-estudiante...",
     "resetProgressGradesLS": "Eliminando calificaciones de LocalStorage...",
     "resetProgressAttendanceLS": "Eliminando asistencia de LocalStorage...",
     "resetProgressUsers": "Limpiando usuarios...",

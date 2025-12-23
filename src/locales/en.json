@@ -1953,6 +1953,8 @@
     "resetProgressSections": "Deleting sections...",
     "resetProgressSubjects": "Deleting subjects...",
     "resetProgressStudentAssignments": "Deleting student assignments...",
+    "resetProgressGuardians": "Deleting guardians...",
+    "resetProgressGuardianRelations": "Deleting guardian-student relations...",
     "resetProgressGradesLS": "Deleting grades from LocalStorage...",
     "resetProgressAttendanceLS": "Deleting attendance from LocalStorage...",
     "resetProgressUsers": "Cleaning users...",
