@@ -109,6 +109,8 @@ export default function GradesPage() {
 
   // Hook SQL para cargar asistencia (para promedio de estudiante)
   const { getAttendanceByYear } = useAttendanceSQL();
+
+
   const [studentAttendanceStats, setStudentAttendanceStats] = useState<{
     avg: number;
     present: number;
@@ -118,6 +120,8 @@ export default function GradesPage() {
   } | null>(null);
 
   // (Lógica de asistencia movida más abajo para tener acceso a filtros)
+
+
 
   // Helper: convierte a ISO de forma segura evitando RangeError cuando la fecha es inválida
   const toIso = (val: any): string => {
@@ -223,10 +227,36 @@ export default function GradesPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [studentAssignments, setStudentAssignments] = useState<any[]>([]);
   const [pendingTasks, setPendingTasks] = useState<PendingTask[]>([]);
+
+  // === Promedio General (para estudiante o apoderado cuando hay estudiante seleccionado) ===
+  const overallAverage = useMemo(() => {
+    try {
+      const scores: number[] = (grades || []).map(g => Number(g.score ?? g.scoreValue ?? g.grade ?? 0)).filter(n => typeof n === 'number' && !isNaN(n));
+      if (scores.length === 0) return null;
+      const avg = scores.reduce((a,b)=>a+b,0)/scores.length;
+      return Math.round(avg * 10) / 10; // one decimal rounding
+    } catch (e) {
+      return null;
+    }
+  }, [grades]);
+
+  const getAvgMessageKey = (avg: number | null) => {
+    if (avg == null) return null;
+    if (avg >= 85) return 'avgMsgExcellent';
+    if (avg >= 75) return 'avgMsgVeryGood';
+    if (avg >= 70) return 'avgMsgGood';
+    if (avg >= 60) return 'avgMsgPass';
+    return 'avgMsgKeepGoing';
+  };
   
   // 🎓 APODERADO: Estudiantes asignados al guardian
   const [guardianStudents, setGuardianStudents] = useState<any[]>([]);
   const [selectedGuardianStudent, setSelectedGuardianStudent] = useState<string | null>(null);
+
+  // Helper: decidir si mostrar la tarjeta de Promedio General (evaluada en tiempo de render)
+  const shouldShowAverageCard = () => {
+    return (user?.role === 'student') || (user?.role === 'guardian' && Boolean(selectedGuardianStudent));
+  };
   // Timeline completo (todas las tareas/evaluaciones/pruebas relevantes para mostrar burbujas N1..N10, no solo pendientes)
   const [timelineTasks, setTimelineTasks] = useState<PendingTask[]>([]);
   // Actividades SQL (cuando hay conexión)
@@ -7788,7 +7818,8 @@ export default function GradesPage() {
           const hasCascadeSection = Boolean(cascadeCourseId && cascadeSectionId);
           const hasSectionContext = hasComboSection || hasCascadeSection;
           const hasSemester = semester !== 'all';
-          const show = hasSemester && hasSectionContext && (hasLevel || hasComboSection) && studentsInView.length > 0;
+          // Mostrar siempre para apoderados cuando han seleccionado un estudiante
+          const show = (user?.role === 'guardian' && selectedGuardianStudent) || (hasSemester && hasSectionContext && (hasLevel || hasComboSection) && studentsInView.length > 0);
           if (!show) return null;
           return (
           <Card className="mt-2">
@@ -7873,6 +7904,20 @@ export default function GradesPage() {
                 : false;
 
               return matchByRut || matchById || matchByName || matchByPartialName || matchByFirstName || matchByEmail;
+            });
+          } else if (user?.role === 'guardian' && selectedGuardianStudent) {
+            // Para apoderados: mostrar las calificaciones del estudiante seleccionado
+            const selectedStudent = guardianStudents.find(s => String(s.id) === String(selectedGuardianStudent));
+            const studentIds = selectedStudent ? [selectedStudent.id, selectedStudent.rut, selectedStudent.username].filter(Boolean) : [selectedGuardianStudent];
+
+            displayedGrades = (grades as any[]).filter((g: any) => {
+              const sid = String(g.studentId || '');
+              const suser = String(g.studentUsername || '');
+              const sname = String(g.studentName || g.student || '').toLowerCase();
+              const matchId = studentIds.includes(sid);
+              const matchUsername = selectedStudent?.username && suser === selectedStudent.username;
+              const matchName = selectedStudent?.displayName && sname.includes((selectedStudent.displayName || '').toLowerCase());
+              return matchId || matchUsername || matchName;
             });
           } else if (user?.role === 'teacher' || user?.role === 'admin') {
             // Para admin/teacher: promedio de estudiantes visibles con filtros actuales

@@ -902,6 +902,15 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
             detail: { userRole: user.role }
           }));
         }, 200);
+      } else if (user?.role === 'guardian') {
+        loadStudentCommunications();
+        
+        // Disparar evento para actualizar el conteo del dashboard
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('updateDashboardCounts', {
+            detail: { userRole: user.role }
+          }));
+        }, 200);
       }
     };
 
@@ -3045,7 +3054,16 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
               {/* Guardian: Communications Section */}
               {user?.role === 'guardian' && (
                 <div>
-                  {studentCommunications.length === 0 ? (
+                  {(() => {
+                    // Calcular comunicaciones no leídas para mostrar estado correcto
+                    const unreadComms = studentCommunications.filter(c => {
+                      const studentId = c.studentInfo?.id;
+                      const readByKey = studentId ? `${user.id}_forStudent_${studentId}` : user.id;
+                      return !((c.readBy||[]).includes(readByKey)) && !((c.readBy||[]).includes(user?.id));
+                    });
+                    
+                    if (unreadComms.length === 0) {
+                      return (
                     <div className="py-8 px-6 text-center">
                       <div className="relative">
                         <div className="mx-auto w-24 h-24 mb-6 bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-900/30 dark:to-emerald-900/30 rounded-full flex items-center justify-center shadow-lg">
@@ -3055,25 +3073,24 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
                         </div>
                         <div className="space-y-3 mb-6">
                           <h3 className="text-lg font-semibold text-green-800 dark:text-green-200">
-                            {translate('allCaughtUpTitle') || 'Todo al día'}
+                            {translate('allCaughtUpTitle') || '¡Todo al día!'}
                           </h3>
                           <p className="text-gray-600 dark:text-gray-300 text-sm">
-                            {translate('noCommunicationsMessage') || 'No hay comunicaciones pendientes'}
+                            {translate('noNotificationsPending') || 'Sin notificaciones pendientes'}
                           </p>
                         </div>
                       </div>
                     </div>
-                  ) : (
+                      );
+                    }
+                    
+                    return (
                     <div className="divide-y divide-border">
                       {/* COMUNICACIONES - Para apoderados - MISMO FORMATO QUE ESTUDIANTE */}
                       <div className="px-4 py-2 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-400 dark:border-red-500">
                         <h3 className="text-sm font-medium text-red-800 dark:text-red-200 flex items-center gap-2">
                           <Megaphone className="h-4 w-4" />
-                          {translate('communicationsSection') || 'Comunicaciones'} ({studentCommunications.filter(c => {
-                            const studentId = c.studentInfo?.id;
-                            const readByKey = studentId ? `${user.id}_forStudent_${studentId}` : user.id;
-                            return !((c.readBy||[]).includes(readByKey)) && !((c.readBy||[]).includes(user?.id));
-                          }).length})
+                          {translate('communicationsSection') || 'Comunicaciones'} ({unreadComms.length})
                         </h3>
                       </div>
                       {studentCommunications.map(comm => {
@@ -3203,7 +3220,8 @@ export default function NotificationsPanel({ count: propCount }: NotificationsPa
                         );
                       })}
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
               

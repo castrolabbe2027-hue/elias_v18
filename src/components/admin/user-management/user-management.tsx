@@ -666,6 +666,109 @@ export default function UserManagement() {
       teacherData.preferredCourseId = userForm.courseId;
       teacherData.selectedSubjects = [...selectedSubjects];
       
+      // 🔄 Si cambió el username, actualizar referencias en todos los datos relacionados
+      const oldUsername = editingUser.username;
+      const newUsername = userForm.username.trim();
+      const oldId = editingUser.id;
+      
+      if (oldUsername !== newUsername) {
+        console.log(`🔄 Actualizando referencias de profesor: ${oldUsername} -> ${newUsername}`);
+        
+        // 1. Actualizar comunicaciones (createdBy)
+        try {
+          const communications = JSON.parse(localStorage.getItem('smart-student-communications') || '[]');
+          const updatedComms = communications.map((c: any) => {
+            if (c.createdBy === oldUsername) {
+              return { ...c, createdBy: newUsername };
+            }
+            return c;
+          });
+          localStorage.setItem('smart-student-communications', JSON.stringify(updatedComms));
+          console.log(`✅ Comunicaciones actualizadas`);
+        } catch (e) { console.warn('Error actualizando comunicaciones:', e); }
+        
+        // 2. Actualizar tareas (assignedBy)
+        try {
+          const tasks = JSON.parse(localStorage.getItem('smart-student-tasks') || '[]');
+          const updatedTasks = tasks.map((t: any) => {
+            if (t.assignedBy === oldUsername || t.teacherId === oldId || t.teacherUsername === oldUsername) {
+              return { 
+                ...t, 
+                assignedBy: t.assignedBy === oldUsername ? newUsername : t.assignedBy,
+                teacherUsername: t.teacherUsername === oldUsername ? newUsername : t.teacherUsername
+              };
+            }
+            return t;
+          });
+          localStorage.setItem('smart-student-tasks', JSON.stringify(updatedTasks));
+          console.log(`✅ Tareas actualizadas`);
+        } catch (e) { console.warn('Error actualizando tareas:', e); }
+        
+        // 3. Actualizar calificaciones (teacherUsername, createdBy)
+        try {
+          const grades = JSON.parse(localStorage.getItem('smart-student-grades') || '[]');
+          const updatedGrades = grades.map((g: any) => {
+            if (g.teacherUsername === oldUsername || g.createdBy === oldUsername) {
+              return { 
+                ...g, 
+                teacherUsername: g.teacherUsername === oldUsername ? newUsername : g.teacherUsername,
+                createdBy: g.createdBy === oldUsername ? newUsername : g.createdBy
+              };
+            }
+            return g;
+          });
+          localStorage.setItem('smart-student-grades', JSON.stringify(updatedGrades));
+          console.log(`✅ Calificaciones actualizadas`);
+        } catch (e) { console.warn('Error actualizando calificaciones:', e); }
+        
+        // 4. Actualizar asistencia (teacherUsername, createdBy)
+        try {
+          const attendance = JSON.parse(localStorage.getItem('smart-student-attendance') || '[]');
+          const updatedAttendance = attendance.map((a: any) => {
+            if (a.teacherUsername === oldUsername || a.createdBy === oldUsername || a.recordedBy === oldUsername) {
+              return { 
+                ...a, 
+                teacherUsername: a.teacherUsername === oldUsername ? newUsername : a.teacherUsername,
+                createdBy: a.createdBy === oldUsername ? newUsername : a.createdBy,
+                recordedBy: a.recordedBy === oldUsername ? newUsername : a.recordedBy
+              };
+            }
+            return a;
+          });
+          localStorage.setItem('smart-student-attendance', JSON.stringify(updatedAttendance));
+          console.log(`✅ Asistencia actualizada`);
+        } catch (e) { console.warn('Error actualizando asistencia:', e); }
+        
+        // 5. Actualizar asignaciones de profesor
+        try {
+          const assignments = JSON.parse(localStorage.getItem('smart-student-teacher-assignments') || '[]');
+          const updatedAssignments = assignments.map((a: any) => {
+            if (a.teacherUsername === oldUsername || a.teacherId === oldId) {
+              return { 
+                ...a, 
+                teacherUsername: a.teacherUsername === oldUsername ? newUsername : a.teacherUsername
+              };
+            }
+            return a;
+          });
+          localStorage.setItem('smart-student-teacher-assignments', JSON.stringify(updatedAssignments));
+          console.log(`✅ Asignaciones de profesor actualizadas`);
+        } catch (e) { console.warn('Error actualizando asignaciones:', e); }
+        
+        // 6. Actualizar presentaciones/slides (createdBy)
+        try {
+          const slides = JSON.parse(localStorage.getItem('smart-student-slides') || '[]');
+          const updatedSlides = slides.map((s: any) => {
+            if (s.createdBy === oldUsername) {
+              return { ...s, createdBy: newUsername };
+            }
+            return s;
+          });
+          localStorage.setItem('smart-student-slides', JSON.stringify(updatedSlides));
+          console.log(`✅ Presentaciones actualizadas`);
+        } catch (e) { console.warn('Error actualizando presentaciones:', e); }
+      }
+      
   const updatedTeachers = teachers.map(t => 
         t.id === editingUser.id ? teacherData : t
       );
@@ -714,11 +817,11 @@ export default function UserManagement() {
       window.dispatchEvent(new CustomEvent('guardiansUpdated'));
     }
 
-    // Update main users array
+    // Update main users array - buscar por id para soportar cambio de username
     const allUsers = JSON.parse(localStorage.getItem('smart-student-users') || '[]');
     const updatedAllUsers = allUsers.map((u: any) => 
-      u.username === editingUser.username 
-        ? { ...u, ...updatedUserData }
+      u.id === editingUser.id || u.username === editingUser.username 
+        ? { ...u, ...updatedUserData, password: userForm.password || u.password }
         : u
     );
     localStorage.setItem('smart-student-users', JSON.stringify(updatedAllUsers));

@@ -1288,6 +1288,9 @@ export default function DashboardHomePage() {
         loadPendingTasks();
         loadTaskNotifications();
   loadUnreadCommunicationsCount();
+      } else if (user?.role === 'guardian') {
+        // 🔧 NUEVO: Recargar comunicaciones no leídas para apoderados
+        loadUnreadCommunicationsCount();
       } else if (user?.role === 'admin') {
         loadPendingPasswordRequests();
       }

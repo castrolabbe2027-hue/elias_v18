@@ -1045,12 +1045,63 @@ export default function ComunicacionesPage() {
           : (formData.targetStudent ? [formData.targetStudent] : []);
 
     recipients.forEach((studentId, i) => {
+          // Obtener curso/sección: primero desde selectedCourseForStudent, luego desde estudiante
+          let studentCourseName: string | undefined;
+          let studentSectionName: string | undefined;
+          
+          // Prioridad 1: usar el curso-sección seleccionado en el formulario
+          if (formData.selectedCourseForStudent) {
+            const cs = courseSections.find(c => c.id === formData.selectedCourseForStudent);
+            if (cs) {
+              studentCourseName = cs.courseName;
+              studentSectionName = cs.sectionName;
+            } else {
+              // Intentar separar el ID
+              if (formData.selectedCourseForStudent.includes('-')) {
+                const [courseId, sectionId] = formData.selectedCourseForStudent.split('-');
+                const csAlt = courseSections.find(c => c.courseId === courseId && c.sectionId === sectionId);
+                if (csAlt) {
+                  studentCourseName = csAlt.courseName;
+                  studentSectionName = csAlt.sectionName;
+                } else {
+                  // Fallback localStorage
+                  try {
+                    const lsCourses: any[] = LocalStorageManager.getCourses() || [];
+                    const lsSections: any[] = LocalStorageManager.getSections() || [];
+                    const course = lsCourses.find(c => c.id === courseId);
+                    const section = lsSections.find(s => s.id === sectionId);
+                    if (course) studentCourseName = course.name;
+                    if (section) studentSectionName = section.name;
+                  } catch (e) { /* ignore */ }
+                }
+              }
+            }
+          }
+          
+          // Prioridad 2: si no hay curso del formulario, buscar desde estudiante
+          if (!studentCourseName || !studentSectionName) {
+            const student = students.find(s => s.id === studentId);
+            if (student && student.assignedCourses?.length > 0) {
+              const ac = student.assignedCourses[0];
+              if (ac && ac.includes('-')) {
+                const [courseId, sectionId] = ac.split('-');
+                const cs = courseSections.find(c => c.courseId === courseId && c.sectionId === sectionId);
+                if (cs) {
+                  studentCourseName = studentCourseName || cs.courseName;
+                  studentSectionName = studentSectionName || cs.sectionName;
+                }
+              }
+            }
+          }
+
           const comm: Communication = {
             id: `comm_${Date.now()}_${i}`,
             title: formData.title,
             content: formData.content,
             type: 'student',
             targetStudent: studentId,
+            targetCourseName: studentCourseName,
+            targetSectionName: studentSectionName,
             createdBy: user?.username || '',
             senderId: user?.id || '',
             createdAt: new Date().toISOString(),
@@ -1304,6 +1355,51 @@ export default function ComunicacionesPage() {
       const student = students.find(s => s.id === communication.targetStudent);
       return student?.displayName || 'Estudiante desconocido';
     }
+  };
+
+  // Helper: obtener nomenclatura "Curso Sección" para un estudiante (p.ej. "1ro Básico B")
+  const getStudentCourseSection = (studentId?: string): string | null => {
+    if (!studentId) return null;
+    const student = students.find(s => s.id === studentId);
+    if (!student) return null;
+    const assigned = student.assignedCourses || [];
+
+    // Intentar encontrar coincidencia en courseSections
+    let cs = courseSections.find(c => assigned.includes(c.id));
+
+    // Intentar por partes si no hay coincidencia directa
+    if (!cs) {
+      for (const ac of assigned) {
+        if (!ac) continue;
+        if (ac.includes('-')) {
+          const [maybeCourseId, maybeSectionId] = ac.split('-');
+          cs = courseSections.find(c => c.courseId === maybeCourseId && c.sectionId === maybeSectionId);
+        }
+        if (cs) break;
+      }
+    }
+
+    // Fallback: leer desde localStorage
+    if (!cs) {
+      try {
+        const lsCourses: any[] = LocalStorageManager.getCourses() || [];
+        const lsSections: any[] = LocalStorageManager.getSections() || [];
+        if (assigned.length > 0) {
+          const ac = assigned[0];
+          if (ac && ac.includes('-')) {
+            const [courseId, sectionId] = ac.split('-');
+            const course = lsCourses.find(c => c.id === courseId || c.name === courseId);
+            const section = lsSections.find(s => s.id === sectionId || (course && s.courseId === course.id && s.name === sectionId));
+            if (course && section) return `${course.name} ${section.name}`;
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    if (cs) return `${cs.courseName} ${cs.sectionName}`;
+    return null;
   };
 
   const filteredCommunications = useMemo(() => {
@@ -2360,18 +2456,30 @@ export default function ComunicacionesPage() {
             <div className="space-y-4">
               {filteredCommunications
                 .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                .map((communication, index) => (
+                .map((communication, index) => {
+                  // Para comunicaciones a estudiante, mostrar curso/sección
+                  let studentCourseSection: string | null = null;
+                  if (communication.type === 'student') {
+                    // Primero intentar desde los datos guardados en la comunicación
+                    if (communication.targetCourseName && communication.targetSectionName) {
+                      studentCourseSection = `${communication.targetCourseName} ${communication.targetSectionName}`;
+                    } else {
+                      // Fallback: calcular desde estudiante
+                      studentCourseSection = getStudentCourseSection(communication.targetStudent);
+                    }
+                  }
+                  return (
                   <div
                     key={generateUniqueKey('sent', communication.id, index, 'history')}
                     className="border rounded-lg p-4 hover:shadow-md transition-shadow"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <h3 className="font-semibold text-lg mb-2">{communication.title}</h3>
+                        <h3 className="font-semibold text-lg mb-1">{communication.title}</h3>
                         <p className="text-muted-foreground mb-3 line-clamp-3">
                           {communication.content}
                         </p>
-                        <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+                        <div className="flex flex-col space-y-1 text-sm text-muted-foreground">
                           <div className="flex items-center">
                             {communication.type === 'course' ? (
                               <Users className="w-4 h-4 mr-1" />
@@ -2380,6 +2488,12 @@ export default function ComunicacionesPage() {
                             )}
                             {getTargetInfo(communication)}
                           </div>
+                          {studentCourseSection && (
+                            <div className="flex items-center">
+                              <Users className="w-4 h-4 mr-1" />
+                              {studentCourseSection}
+                            </div>
+                          )}
                           <div className="flex items-center">
                             <Calendar className="w-4 h-4 mr-1" />
                             {formatDateTimeOneLine(communication.createdAt)}
@@ -2406,7 +2520,7 @@ export default function ComunicacionesPage() {
                       </div>
                     </div>
                   </div>
-                ))
+                );})
               }
             </div>
           )}
