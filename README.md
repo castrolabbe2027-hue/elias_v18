@@ -67,6 +67,111 @@ CLOUDINARY_CLOUD_NAME=...
 - Si ves **QuotaExceededError**, el sistema intenta reducir y recuperar datos automáticamente; para recuperación manual puedes limpiar claves específicas de `localStorage`.
 - Verifica que `GOOGLE_API_KEY` esté presente para generar contenido IA real.
 
+### Comandos y acciones útiles 🔧
+- Iniciar Genkit (modo desarrollo):
+```bash
+npm run genkit:dev
+```
+- Ver logs de la app en desarrollo:
+```bash
+npm run dev
+# Revisa la consola donde corre la app y la del servidor Genkit
+```
+- Limpiar claves problemáticas en consola del navegador:
+```javascript
+// Elimina solo evaluaciones locales
+localStorage.removeItem('smart-student-evaluations');
+// Elimina historiales de evaluaciones
+Object.keys(localStorage)
+  .filter(k => k.startsWith('evaluationHistory_'))
+  .forEach(k => localStorage.removeItem(k));
+```
+- Recuperación manual ante QuotaExceededError (pasos):
+  1. Exportar historial importante (si es posible) desde la UI de export/import.
+  2. Ejecutar limpieza selectiva de claves antiguas.
+  3. Reiniciar la app y volver a intentar la operación.
+
+---
+
+## 🧾 API y Endpoints (resumen) 🔌
+A continuación un resumen de los endpoints más relevantes. Consulta `src/app/api` para definiciones completas.
+
+### POST /api/extract-pdf-content
+- Uso: Extraer texto y metadatos de un PDF (upload o URL).
+- Body (form-data o JSON): `{ file: <archivo> }` o `{ url: "https://..." }`
+- Respuesta (ejemplo):
+```json
+{
+  "pages": 12,
+  "topics": ["Sistema Respiratorio","Célula"],
+  "text": "..."
+}
+```
+
+Ejemplo cURL:
+```bash
+curl -X POST "http://localhost:9002/api/extract-pdf-content" -F "file=@material.pdf"
+```
+
+### POST /api/generate-evaluation
+- Uso: Generar una evaluación específica por curso/asignatura/tema.
+- Body (JSON): `{ "course":"4to Básico", "subject":"Ciencias Naturales", "topic":"Sistema Respiratorio", "numQuestions":10 }`
+- Respuesta (ejemplo):
+```json
+{
+  "id": "eval_123",
+  "questions": [ { "type":"mcq", "question":"...", "options":[...] }, ... ]
+}
+```
+
+Ejemplo fetch (Node/Browser):
+```js
+await fetch('/api/generate-evaluation', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ course, subject, topic, numQuestions })
+});
+```
+
+---
+
+## ✍️ Ejemplos de uso y pantallazos 🖼️
+- Flujo típico:
+  1. Admin → Dashboard → Evaluación → Selecciona curso/asignatura/tema.
+  2. Hacer click en "Generar evaluación" y revisar preguntas generadas.
+  3. Exportar/guardar la evaluación si es correcta.
+
+- Ejemplo práctico (curl):
+```bash
+curl -X POST 'http://localhost:9002/api/generate-evaluation' \
+  -H 'Content-Type: application/json' \
+  -d '{"course":"4to Básico","subject":"Ciencias Naturales","topic":"Fotosíntesis","numQuestions":5}'
+```
+
+- Pantallazos (placeholder):
+  - `/public/screenshots/evaluacion.png` — pantalla de generación de evaluación
+  - `/public/screenshots/kpis.png` — panel de KPIs
+
+> Añade pantallazos reales en `public/screenshots/` con los nombres anteriores para que se muestren aquí.
+
+---
+
+## 📊 KPIs y métricas clave
+| KPI | Objetivo | Estado |
+|---|---:|:---:|
+| Preguntas específicas por tema | 100% | ✅ Implementado |
+| Errores QuotaExceededError | 0 | ✅ Auto-recover |
+| Temas implementados | 50+ | ✅ |
+| Cobertura tests unitarios | >=80% | ⚠️ En progreso |
+| Latencia IA (p99) | < 500ms | ⚠️ Monitoring |
+
+---
+
+## 🔍 Consejos de debugging rápido
+- Revisa que `GOOGLE_API_KEY` esté en `.env.local` y no en `.env` compartido.
+- Para reproducir problemas con IA, habilita logs en Genkit y reproduce la petición problemática.
+- Si los datos no aparecen en UI: inspecciona `localStorage` y las claves `smart-student-*`.
+
 ---
 
 ## 📄 Licencia
