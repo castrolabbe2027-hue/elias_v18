@@ -215,37 +215,85 @@ export default function LibrosPage() {
     return courseMap[course] || course;
   };
 
+  // 🔧 FUNCIÓN PARA NORMALIZAR NOMBRES DE CURSOS (para matching con bookPDFs)
+  const normalizeCourseNameForBooks = (courseName: string): string => {
+    if (!courseName) return '';
+    
+    // Remover la sección si existe (ej: "1ro Básico - Sección A" -> "1ro Básico")
+    let normalized = courseName.split(' - ')[0].trim();
+    
+    // Normalizar variantes comunes
+    normalized = normalized
+      .replace(/1er|1°|Primer/gi, '1ro')
+      .replace(/2do|2°|Segundo/gi, '2do')
+      .replace(/3er|3°|Tercer/gi, '3ro')
+      .replace(/4to|4°|Cuarto/gi, '4to')
+      .replace(/5to|5°|Quinto/gi, '5to')
+      .replace(/6to|6°|Sexto/gi, '6to')
+      .replace(/7mo|7°|Séptimo|Septimo/gi, '7mo')
+      .replace(/8vo|8°|Octavo/gi, '8vo')
+      .replace(/basica/gi, 'Básico')
+      .replace(/medio/gi, 'Medio');
+    
+    return normalized;
+  };
+
+  // 🔧 FUNCIÓN PARA VERIFICAR SI UN LIBRO COINCIDE CON UN CURSO
+  const bookMatchesCourse = (bookCourse: string, userCourse: string): boolean => {
+    const normalizedBook = normalizeCourseNameForBooks(bookCourse);
+    const normalizedUser = normalizeCourseNameForBooks(userCourse);
+    
+    return normalizedBook.toLowerCase() === normalizedUser.toLowerCase();
+  };
+
   // Group books by course - filtered by user permissions and teacher assignments
   // Helper: cursos accesibles para estudiante (usa activeCourses; si no hay, deriva desde asignaciones)
   const getStudentAccessibleCourses = () => {
     const base = getAccessibleCourses() || [];
-    if (user.role !== 'student') return base;
-    if (Array.isArray(base) && base.length > 0) return base;
-
+    if (user.role !== 'student' && user.role !== 'estudiante') return base;
+    
     try {
       const assignments = JSON.parse(localStorage.getItem('smart-student-student-assignments') || '[]');
       const coursesData = JSON.parse(localStorage.getItem('smart-student-courses') || '[]');
       const sections = JSON.parse(localStorage.getItem('smart-student-sections') || '[]');
       const my = Array.isArray(assignments) ? assignments.filter((a: any) => String(a.studentId) === String(user.id) || String(a.studentUsername) === String(user.username)) : [];
+      
+      console.log('📚 [Libros] Asignaciones del estudiante:', my);
+      
       const names = new Set<string>();
       for (const a of my) {
         let courseName: string | null = null;
         if (a.courseId) {
           const c = coursesData.find((c: any) => String(c.id) === String(a.courseId));
           courseName = c?.name || null;
-        } else if (a.sectionId) {
+          console.log(`📚 [Libros] Curso por courseId ${a.courseId}:`, courseName);
+        } 
+        if (!courseName && a.sectionId) {
           const s = sections.find((s: any) => String(s.id) === String(a.sectionId));
           if (s) {
             const c = coursesData.find((c: any) => String(c.id) === String(s.courseId));
             courseName = c?.name || null;
+            console.log(`📚 [Libros] Curso por sectionId ${a.sectionId}:`, courseName);
           }
         }
-        if (courseName) names.add(String(courseName));
+        if (courseName) {
+          // Normalizar el nombre del curso para que coincida con bookPDFs
+          const normalizedName = normalizeCourseNameForBooks(courseName);
+          names.add(normalizedName);
+        }
       }
+      
+      // Si no hay asignaciones, intentar con activeCourses del usuario
+      if (names.size === 0 && Array.isArray(base) && base.length > 0) {
+        console.log('📚 [Libros] Usando activeCourses como fallback:', base);
+        base.forEach(c => names.add(normalizeCourseNameForBooks(c)));
+      }
+      
       const list = Array.from(names);
-      console.log('📚 [Libros] Cursos accesibles para estudiante:', list);
-      return list.length > 0 ? list : base;
-    } catch {
+      console.log('📚 [Libros] Cursos accesibles para estudiante (normalizados):', list);
+      return list.length > 0 ? list : base.map(c => normalizeCourseNameForBooks(c));
+    } catch (error) {
+      console.error('📚 [Libros] Error obteniendo cursos del estudiante:', error);
       return base;
     }
   };
@@ -306,13 +354,16 @@ export default function LibrosPage() {
           String(a.studentId) === String(studentId)
         );
         
+        console.log(`👨‍👩‍👧 [Libros] Asignaciones para estudiante ${studentId}:`, studentAssigns);
+        
         for (const assignment of studentAssigns) {
           let courseName: string | null = null;
           
           if (assignment.courseId) {
             const course = coursesData.find((c: any) => String(c.id) === String(assignment.courseId));
             courseName = course?.name || null;
-          } else if (assignment.sectionId) {
+          }
+          if (!courseName && assignment.sectionId) {
             const section = sections.find((s: any) => String(s.id) === String(assignment.sectionId));
             if (section) {
               const course = coursesData.find((c: any) => String(c.id) === String(section.courseId));
@@ -321,7 +372,8 @@ export default function LibrosPage() {
           }
           
           if (courseName) {
-            courseNames.add(courseName);
+            // Normalizar el nombre del curso
+            courseNames.add(normalizeCourseNameForBooks(courseName));
           }
         }
         
@@ -334,17 +386,16 @@ export default function LibrosPage() {
           for (const courseId of student.activeCourses) {
             const course = coursesData.find((c: any) => String(c.id) === String(courseId) || c.name === courseId);
             if (course?.name) {
-              courseNames.add(course.name);
-            } else if (typeof courseId === 'string' && courseId.includes('Básico') || courseId.includes('Medio')) {
-              // Si el courseId parece ser un nombre de curso directamente
-              courseNames.add(courseId);
+              courseNames.add(normalizeCourseNameForBooks(course.name));
+            } else if (typeof courseId === 'string' && (courseId.includes('Básico') || courseId.includes('Medio'))) {
+              courseNames.add(normalizeCourseNameForBooks(courseId));
             }
           }
         }
       }
       
       const result = Array.from(courseNames);
-      console.log('👨‍👩‍👧 [Libros] Cursos accesibles para apoderado:', result);
+      console.log('👨‍👩‍👧 [Libros] Cursos accesibles para apoderado (normalizados):', result);
       return result;
       
     } catch (error) {
@@ -368,7 +419,7 @@ export default function LibrosPage() {
         });
 
         filteredBooks = bookPDFs.filter(book => {
-          const courseMatch = teacherAssignments.courses.includes(book.course);
+          const courseMatch = teacherAssignments.courses.some(c => bookMatchesCourse(book.course, c));
           const subjectMatch = teacherAssignments.subjects.some(subject => 
             book.subject.toLowerCase().includes(subject.toLowerCase()) ||
             subject.toLowerCase().includes(book.subject.toLowerCase())
@@ -390,15 +441,33 @@ export default function LibrosPage() {
         filteredBooks = bookPDFs.filter(book => book.course === '4to Básico' && book.subject === 'Matemáticas');
       }
     } else if (user.role === 'student' || user.role === 'estudiante') {
-      // Para estudiantes: tomar cursos desde activeCourses; si está vacío, usar asignaciones
+      // Para estudiantes: tomar cursos desde asignaciones y normalizar
       const accessibleCourses = getStudentAccessibleCourses();
-      console.log('📚 [Libros] Estudiante - Cursos accesibles:', accessibleCourses);
-      filteredBooks = bookPDFs.filter(book => accessibleCourses.includes(book.course));
+      console.log('📚 [Libros] Estudiante - Cursos accesibles (normalizados):', accessibleCourses);
+      
+      filteredBooks = bookPDFs.filter(book => {
+        const match = accessibleCourses.some(c => bookMatchesCourse(book.course, c));
+        if (match) {
+          console.log(`✅ [Libros] Match encontrado: ${book.course} para estudiante`);
+        }
+        return match;
+      });
+      
+      console.log(`📚 [Libros] Libros filtrados para estudiante: ${filteredBooks.length}`);
     } else if (user.role === 'guardian') {
       // 👨‍👩‍👧 Para apoderados: mostrar libros de los cursos de sus estudiantes asignados
       const accessibleCourses = getGuardianAccessibleCourses();
-      console.log('👨‍👩‍👧 [Libros] Apoderado - Cursos accesibles:', accessibleCourses);
-      filteredBooks = bookPDFs.filter(book => accessibleCourses.includes(book.course));
+      console.log('👨‍👩‍👧 [Libros] Apoderado - Cursos accesibles (normalizados):', accessibleCourses);
+      
+      filteredBooks = bookPDFs.filter(book => {
+        const match = accessibleCourses.some(c => bookMatchesCourse(book.course, c));
+        if (match) {
+          console.log(`✅ [Libros] Match encontrado: ${book.course} para apoderado`);
+        }
+        return match;
+      });
+      
+      console.log(`👨‍👩‍👧 [Libros] Libros filtrados para apoderado: ${filteredBooks.length}`);
     } else {
       // Admin u otros roles: lógica existente
       const accessibleCourses = getAccessibleCourses();
@@ -424,7 +493,7 @@ export default function LibrosPage() {
       
       if (!teacherAssignments) return false;
       
-      const courseMatch = teacherAssignments.courses.includes(book.course);
+      const courseMatch = teacherAssignments.courses.some(c => bookMatchesCourse(book.course, c));
       const subjectMatch = teacherAssignments.subjects.some(subject => 
         book.subject.toLowerCase().includes(subject.toLowerCase()) ||
         subject.toLowerCase().includes(book.subject.toLowerCase())
@@ -433,11 +502,11 @@ export default function LibrosPage() {
       return courseMatch && subjectMatch;
     } else if (user.role === 'student' || user.role === 'estudiante') {
       const accessibleCourses = getStudentAccessibleCourses();
-      return accessibleCourses.includes(book.course);
+      return accessibleCourses.some(c => bookMatchesCourse(book.course, c));
     } else if (user.role === 'guardian') {
       // 👨‍👩‍👧 Para apoderados: verificar si el libro está en los cursos de sus estudiantes
       const accessibleCourses = getGuardianAccessibleCourses();
-      return accessibleCourses.includes(book.course);
+      return accessibleCourses.some(c => bookMatchesCourse(book.course, c));
     } else {
       // Admin u otros roles
       const accessibleCourses = getAccessibleCourses();
