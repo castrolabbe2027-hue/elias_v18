@@ -37,17 +37,64 @@ export function BookCourseSelector({
   const [booksForCourse, setBooksForCourse] = useState<string[]>([]);
   const [availableSubjects, setAvailableSubjects] = useState<string[]>([]);
 
-  // Helper: cursos accesibles para estudiante; si no hay en activeCourses, derivar desde asignaciones
+  // Helper: Normaliza nombres de curso para comparaciones y display
+  const normalizeCourseName = (raw: string) => {
+    if (!raw) return '';
+    let s = String(raw).trim();
+    // Quitar sufijo " - Sección X" si existe
+    const m = s.match(/^(.+?)\s*-\s*Secci[oó]n/i);
+    if (m && m[1]) s = m[1].trim();
+    // Quitar posible letra de sección final ("1ro Básico A" -> "1ro Básico")
+    s = s.replace(/\s+[A-Z]$/i, '').trim();
+    return s;
+  };
+
+  // Helper: cursos accesibles para estudiante; si no hay en activeCourses, derivar desde usuario o asignaciones
   const getStudentAccessibleCourses = (): string[] => {
     const base = getAccessibleCourses() || [];
     if (user?.role !== 'student') return base;
+
+    // Si ya hay cursos accesibles desde contexto, devolverlos
     if (Array.isArray(base) && base.length > 0) return base;
+
+    const names = new Set<string>();
+
     try {
+      // 1) Revisar datos directos del usuario (course, enrolledCourses, activeCourseNames)
+      if (user.course) {
+        names.add(normalizeCourseName(user.course));
+      }
+
+      if (Array.isArray(user.enrolledCourses) && user.enrolledCourses.length > 0) {
+        for (const entry of user.enrolledCourses) {
+          const raw = typeof entry === 'string' ? entry : (entry?.name || '');
+          if (raw) names.add(normalizeCourseName(raw));
+        }
+      }
+
+      if (Array.isArray(user.activeCourseNames) && user.activeCourseNames.length > 0) {
+        for (const entry of user.activeCourseNames) {
+          const raw = typeof entry === 'string' ? entry : (entry?.name || '');
+          if (raw) names.add(normalizeCourseName(raw));
+        }
+      }
+
+      // If we already found something from user object, return it
+      if (names.size > 0) {
+        return Array.from(names);
+      }
+
+      // 2) Fallback: buscar en studentAssignments
       const assignments = JSON.parse(localStorage.getItem('smart-student-student-assignments') || '[]');
       const coursesLS = JSON.parse(localStorage.getItem('smart-student-courses') || '[]');
       const sectionsLS = JSON.parse(localStorage.getItem('smart-student-sections') || '[]');
-      const mine = Array.isArray(assignments) ? assignments.filter((a: any) => String(a.studentId) === String(user.id) || String(a.studentUsername) === String(user.username)) : [];
-      const names = new Set<string>();
+      const mine = Array.isArray(assignments) ? assignments.filter((a: any) => {
+        const matchById = String(a.studentId) === String(user.id);
+        const matchByUsername = String(a.studentUsername) === String(user.username);
+        const matchByPartial = a.studentId && user.id && (String(a.studentId).includes(String(user.id)) || String(user.id).includes(String(a.studentId)));
+        return matchById || matchByUsername || matchByPartial;
+      }) : [];
+
       for (const a of mine) {
         let courseName: string | null = null;
         if (a.courseId) {
@@ -60,11 +107,13 @@ export function BookCourseSelector({
             courseName = c?.name || null;
           }
         }
-        if (courseName) names.add(String(courseName));
+        if (courseName) names.add(normalizeCourseName(courseName));
       }
+
       const list = Array.from(names);
       return list.length > 0 ? list : base;
-    } catch {
+    } catch (err) {
+      console.warn('[BookSelector] Error al derivar cursos accesibles para estudiante:', err);
       return base;
     }
   };
@@ -404,6 +453,22 @@ export function BookCourseSelector({
       onSubjectChange?.('');
     }
   }, [showSubjectSelector, user?.role, selectedCourse, selectedSubject, onSubjectChange, language]);
+
+  // AUTOSELECT: si el usuario es estudiante y no hay curso seleccionado, seleccionar el curso detectado por prioridad
+  useEffect(() => {
+    if (user?.role !== 'student') return;
+    if (selectedCourse) return; // no sobrescribir selección manual
+
+    if (filteredCourses && filteredCourses.length > 0) {
+      // Priorizar match con user.course / enrolledCourses / activeCourseNames si existe
+      const userCourseNormalized = user?.course ? normalizeCourseName(user.course) : null;
+      const candidate = (userCourseNormalized && filteredCourses.find(c => normalizeCourseName(c) === userCourseNormalized)) || filteredCourses[0];
+      if (candidate) {
+        console.log('📚 [BookSelector] Auto-seleccionando curso para estudiante:', candidate);
+        onCourseChange(candidate);
+      }
+    }
+  }, [user?.role, filteredCourses, selectedCourse, onCourseChange]);
 
   useEffect(() => {
     const canUseSelected = selectedCourse && courses[selectedCourse] && (
