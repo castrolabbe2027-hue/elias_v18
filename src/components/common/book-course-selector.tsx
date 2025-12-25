@@ -1,6 +1,6 @@
 
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLanguage } from '@/contexts/language-context';
 import { useAppData } from '@/contexts/app-data-context';
 import { useAuth } from '@/contexts/auth-context';
@@ -8,6 +8,51 @@ import { bookPDFs } from '@/lib/books-data';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { CourseData } from '@/lib/types';
 import { LocalStorageManager } from '@/lib/education-utils';
+
+// Cache para datos de localStorage (evita lecturas repetidas)
+let cachedLocalStorageData: {
+  users: any[];
+  assignments: any[];
+  sections: any[];
+  courses: any[];
+  teacherAssignments: any[];
+  guardianRelations: any[];
+  timestamp: number;
+} | null = null;
+const LS_CACHE_TTL = 30 * 1000; // 30 segundos
+
+function getCachedLocalStorageData() {
+  if (cachedLocalStorageData && Date.now() - cachedLocalStorageData.timestamp < LS_CACHE_TTL) {
+    return cachedLocalStorageData;
+  }
+  
+  try {
+    cachedLocalStorageData = {
+      users: JSON.parse(localStorage.getItem('smart-student-users') || '[]'),
+      assignments: JSON.parse(localStorage.getItem('smart-student-student-assignments') || '[]'),
+      sections: JSON.parse(localStorage.getItem('smart-student-sections') || '[]'),
+      courses: JSON.parse(localStorage.getItem('smart-student-courses') || '[]'),
+      teacherAssignments: JSON.parse(localStorage.getItem('smart-student-teacher-assignments') || '[]'),
+      guardianRelations: JSON.parse(localStorage.getItem('smart-student-guardian-student-relations') || '[]'),
+      timestamp: Date.now()
+    };
+  } catch (e) {
+    console.warn('[BookSelector] Error cargando datos de localStorage:', e);
+    cachedLocalStorageData = {
+      users: [], assignments: [], sections: [], courses: [],
+      teacherAssignments: [], guardianRelations: [], timestamp: Date.now()
+    };
+  }
+  
+  return cachedLocalStorageData;
+}
+
+// Invalidar caché cuando hay cambios
+if (typeof window !== 'undefined') {
+  window.addEventListener('localStorageUpdate', () => {
+    cachedLocalStorageData = null;
+  });
+}
 
 interface BookCourseSelectorProps {
   onCourseChange: (course: string) => void;
@@ -51,7 +96,7 @@ export function BookCourseSelector({
   };
 
   // Helper: cursos accesibles para estudiante; si no hay en activeCourses, derivar desde usuario completo en localStorage o desde asignaciones
-  const getStudentAccessibleCourses = (): string[] => {
+  const getStudentAccessibleCourses = useCallback((): string[] => {
     const base = getAccessibleCourses() || [];
     if (user?.role !== 'student') return base;
 
@@ -61,43 +106,37 @@ export function BookCourseSelector({
     const names = new Set<string>();
 
     try {
-      // Intentar obtener el usuario completo desde localStorage (gestion de usuarios)
-      const storedUsers = localStorage.getItem('smart-student-users');
-      if (storedUsers) {
-        const usersData = JSON.parse(storedUsers);
-        const fullUserData = usersData.find((u: any) => String(u.id) === String(user.id) || String(u.username) === String(user.username));
-        if (fullUserData) {
-          console.log('📚 [BookSelector] getStudentAccessibleCourses - fullUserData found in localStorage for', user.username);
+      // Usar caché de localStorage
+      const lsData = getCachedLocalStorageData();
+      const fullUserData = lsData.users.find((u: any) => String(u.id) === String(user.id) || String(u.username) === String(user.username));
+      if (fullUserData) {
+        console.log('📚 [BookSelector] getStudentAccessibleCourses - fullUserData found in cache for', user.username);
 
-          if (fullUserData.course) names.add(normalizeCourseName(fullUserData.course));
+        if (fullUserData.course) names.add(normalizeCourseName(fullUserData.course));
 
-          if (Array.isArray(fullUserData.enrolledCourses) && fullUserData.enrolledCourses.length > 0) {
-            for (const entry of fullUserData.enrolledCourses) {
-              const raw = typeof entry === 'string' ? entry : (entry?.name || '');
-              if (raw) names.add(normalizeCourseName(raw));
-            }
+        if (Array.isArray(fullUserData.enrolledCourses) && fullUserData.enrolledCourses.length > 0) {
+          for (const entry of fullUserData.enrolledCourses) {
+            const raw = typeof entry === 'string' ? entry : (entry?.name || '');
+            if (raw) names.add(normalizeCourseName(raw));
           }
+        }
 
-          if (Array.isArray(fullUserData.activeCourseNames) && fullUserData.activeCourseNames.length > 0) {
-            for (const entry of fullUserData.activeCourseNames) {
-              const raw = typeof entry === 'string' ? entry : (entry?.name || '');
-              if (raw) names.add(normalizeCourseName(raw));
-            }
+        if (Array.isArray(fullUserData.activeCourseNames) && fullUserData.activeCourseNames.length > 0) {
+          for (const entry of fullUserData.activeCourseNames) {
+            const raw = typeof entry === 'string' ? entry : (entry?.name || '');
+            if (raw) names.add(normalizeCourseName(raw));
           }
+        }
 
-          if (names.size > 0) {
-            const res = Array.from(names);
-            console.log('📚 [BookSelector] getStudentAccessibleCourses =>', res);
-            return res;
-          }
+        if (names.size > 0) {
+          const res = Array.from(names);
+          console.log('📚 [BookSelector] getStudentAccessibleCourses =>', res);
+          return res;
         }
       }
 
-      // 2) Fallback: buscar en studentAssignments
-      const assignments = JSON.parse(localStorage.getItem('smart-student-student-assignments') || '[]');
-      const coursesLS = JSON.parse(localStorage.getItem('smart-student-courses') || '[]');
-      const sectionsLS = JSON.parse(localStorage.getItem('smart-student-sections') || '[]');
-      const mine = Array.isArray(assignments) ? assignments.filter((a: any) => {
+      // 2) Fallback: buscar en studentAssignments (usando caché)
+      const mine = Array.isArray(lsData.assignments) ? lsData.assignments.filter((a: any) => {
         const matchById = String(a.studentId) === String(user.id);
         const matchByUsername = String(a.studentUsername) === String(user.username);
         const matchByPartial = a.studentId && user.id && (String(a.studentId).includes(String(user.id)) || String(user.id).includes(String(a.studentId)));
@@ -107,12 +146,12 @@ export function BookCourseSelector({
       for (const a of mine) {
         let courseName: string | null = null;
         if (a.courseId) {
-          const c = coursesLS.find((c: any) => String(c.id) === String(a.courseId));
+          const c = lsData.courses.find((c: any) => String(c.id) === String(a.courseId));
           courseName = c?.name || null;
         } else if (a.sectionId) {
-          const s = sectionsLS.find((s: any) => String(s.id) === String(a.sectionId));
+          const s = lsData.sections.find((s: any) => String(s.id) === String(a.sectionId));
           if (s) {
-            const c = coursesLS.find((c: any) => String(c.id) === String(s.courseId));
+            const c = lsData.courses.find((c: any) => String(c.id) === String(s.courseId));
             courseName = c?.name || null;
           }
         }
@@ -126,7 +165,7 @@ export function BookCourseSelector({
       console.warn('[BookSelector] Error al derivar cursos accesibles para estudiante:', err);
       return base;
     }
-  };
+  }, [user, getAccessibleCourses]);
 
   // Función para traducir nombres de asignaturas
   const translateSubjectName = (subjectName: string): string => {
@@ -170,57 +209,42 @@ export function BookCourseSelector({
   };
 
   // Función para obtener las asignaturas asignadas al profesor para un curso específico
-  const getTeacherAssignedSubjectsForCourse = (courseName: string) => {
+  const getTeacherAssignedSubjectsForCourse = useCallback((courseName: string) => {
     if (!user || user.role !== 'teacher' || !courseName) return [];
 
     try {
       console.log('🔍 [BookSelector] Obteniendo asignaturas del profesor:', user.username, 'para curso:', courseName);
       
-      const storedUsers = localStorage.getItem('smart-student-users');
-      if (!storedUsers) return [];
-      
-      const usersData = JSON.parse(storedUsers);
-      const fullUserData = usersData.find((u: any) => u.username === user.username);
+      const lsData = getCachedLocalStorageData();
+      const fullUserData = lsData.users.find((u: any) => u.username === user.username);
       if (!fullUserData) return [];
 
-      const storedAssignments = localStorage.getItem('smart-student-teacher-assignments');
-      const storedSections = localStorage.getItem('smart-student-sections');
-      const storedCourses = localStorage.getItem('smart-student-courses');
+      // Buscar asignaciones por ID del profesor usando caché
+      const teacherAssignments = lsData.teacherAssignments.filter((assignment: any) => 
+        assignment.teacherId === fullUserData.id
+      );
 
-      if (storedAssignments && storedSections && storedCourses) {
-        const assignments = JSON.parse(storedAssignments);
-        const sections = JSON.parse(storedSections);
-        const courses = JSON.parse(storedCourses);
+      const assignedSubjectsForCourse = new Set<string>();
 
-        // Buscar asignaciones por ID del profesor
-        const teacherAssignments = assignments.filter((assignment: any) => 
-          assignment.teacherId === fullUserData.id
-        );
-
-        const assignedSubjectsForCourse = new Set<string>();
-
-        teacherAssignments.forEach((assignment: any) => {
-          const section = sections.find((s: any) => s.id === assignment.sectionId);
-          if (section) {
-            const course = courses.find((c: any) => c.id === section.courseId);
-            if (course && course.name === courseName) {
-              assignedSubjectsForCourse.add(assignment.subjectName);
-              console.log('✅ [BookSelector] Asignatura encontrada para', courseName, ':', assignment.subjectName);
-            }
+      teacherAssignments.forEach((assignment: any) => {
+        const section = lsData.sections.find((s: any) => s.id === assignment.sectionId);
+        if (section) {
+          const course = lsData.courses.find((c: any) => c.id === section.courseId);
+          if (course && course.name === courseName) {
+            assignedSubjectsForCourse.add(assignment.subjectName);
+            console.log('✅ [BookSelector] Asignatura encontrada para', courseName, ':', assignment.subjectName);
           }
-        });
+        }
+      });
 
-        const result = Array.from(assignedSubjectsForCourse);
-        console.log('📋 [BookSelector] Asignaturas finales para', courseName, ':', result);
-        return result;
-      }
-
-      return [];
+      const result = Array.from(assignedSubjectsForCourse);
+      console.log('📋 [BookSelector] Asignaturas finales para', courseName, ':', result);
+      return result;
     } catch (error) {
       console.error('[BookSelector] Error al obtener asignaturas por curso:', error);
       return [];
     }
-  };
+  }, [user]);
 
   // Función para obtener asignaturas disponibles para estudiantes/admin a partir de la biblioteca de libros
   const getSubjectsForCourseForStudent = (courseName: string) => {
@@ -239,22 +263,16 @@ export function BookCourseSelector({
     }
   };
 
-  // Función para obtener las asignaturas asignadas al profesor
-  const getTeacherAssignedSubjects = () => {
+  // Función para obtener las asignaturas asignadas al profesor (optimizada con caché)
+  const getTeacherAssignedSubjects = useCallback(() => {
     if (!user || user.role !== 'teacher') return null;
 
     try {
       console.log('🔍 [BookSelector] Analizando asignaciones del profesor:', user.username);
       
-      // Obtener datos del usuario completo desde localStorage
-      const storedUsers = localStorage.getItem('smart-student-users');
-      if (!storedUsers) {
-        console.warn('[BookSelector] No se encontraron usuarios en localStorage');
-        return null;
-      }
-      
-      const usersData = JSON.parse(storedUsers);
-      const fullUserData = usersData.find((u: any) => u.username === user.username);
+      // Usar caché de localStorage
+      const lsData = getCachedLocalStorageData();
+      const fullUserData = lsData.users.find((u: any) => u.username === user.username);
       
       if (!fullUserData) {
         console.warn('[BookSelector] Usuario no encontrado:', user.username);
@@ -267,59 +285,36 @@ export function BookCourseSelector({
         role: fullUserData.role
       });
 
-      // Buscar asignaciones en el sistema de gestión de usuarios
-      const storedAssignments = localStorage.getItem('smart-student-teacher-assignments');
-      const storedSections = localStorage.getItem('smart-student-sections');
-      const storedCourses = localStorage.getItem('smart-student-courses');
+      // Buscar asignaciones por ID del profesor usando caché
+      const teacherAssignments = lsData.teacherAssignments.filter((assignment: any) => 
+        assignment.teacherId === fullUserData.id
+      );
 
-      console.log('📦 [BookSelector] Verificando datos:', {
-        hasAssignments: !!storedAssignments,
-        hasSections: !!storedSections,
-        hasCourses: !!storedCourses
-      });
+      console.log('📋 [BookSelector] Asignaciones encontradas:', teacherAssignments.length);
 
-      if (storedAssignments && storedSections && storedCourses) {
-        const assignments = JSON.parse(storedAssignments);
-        const sections = JSON.parse(storedSections);
-        const courses = JSON.parse(storedCourses);
+      if (teacherAssignments.length > 0) {
+        const assignedCourses = new Set<string>();
+        const assignedSubjects = new Set<string>();
 
-        console.log('📋 [BookSelector] Total asignaciones en sistema:', assignments.length);
-        console.log('📋 [BookSelector] Buscando asignaciones para teacherId:', fullUserData.id);
-
-        // Buscar asignaciones por ID del profesor
-        const teacherAssignments = assignments.filter((assignment: any) => 
-          assignment.teacherId === fullUserData.id
-        );
-
-        console.log('📋 [BookSelector] Asignaciones encontradas para este profesor:', teacherAssignments);
-
-        if (teacherAssignments.length > 0) {
-          const assignedCourses = new Set<string>();
-          const assignedSubjects = new Set<string>();
-
-          teacherAssignments.forEach((assignment: any) => {
-            console.log('🔍 [BookSelector] Procesando asignación:', assignment);
-            const section = sections.find((s: any) => s.id === assignment.sectionId);
-            
-            if (section) {
-              const course = courses.find((c: any) => c.id === section.courseId);
-              if (course) {
-                assignedCourses.add(course.name);
-                console.log('📚 [BookSelector] Curso agregado:', course.name);
-              }
-              assignedSubjects.add(assignment.subjectName);
-              console.log('🎯 [BookSelector] Asignatura agregada:', assignment.subjectName);
+        teacherAssignments.forEach((assignment: any) => {
+          const section = lsData.sections.find((s: any) => s.id === assignment.sectionId);
+          
+          if (section) {
+            const course = lsData.courses.find((c: any) => c.id === section.courseId);
+            if (course) {
+              assignedCourses.add(course.name);
             }
-          });
+            assignedSubjects.add(assignment.subjectName);
+          }
+        });
 
-          const result = {
-            courses: Array.from(assignedCourses),
-            subjects: Array.from(assignedSubjects)
-          };
+        const result = {
+          courses: Array.from(assignedCourses),
+          subjects: Array.from(assignedSubjects)
+        };
 
-          console.log('✅ [BookSelector] Resultado final:', result);
-          return result;
-        }
+        console.log('✅ [BookSelector] Resultado final:', result);
+        return result;
       }
 
       console.log('⚠️ [BookSelector] No se encontraron asignaciones específicas para el profesor');
@@ -329,7 +324,7 @@ export function BookCourseSelector({
       console.error('[BookSelector] Error al obtener asignaciones del profesor:', error);
       return null;
     }
-  };
+  }, [user]);
 
   // Función para verificar si un libro coincide con las asignaturas del profesor
   const doesBookMatchTeacherSubjects = (bookName: string): boolean => {

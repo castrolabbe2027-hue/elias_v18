@@ -15,6 +15,14 @@ import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { bookPDFs } from '@/lib/books-data';
 
+// Cache para contenido de PDFs (evita descargas repetidas)
+const pdfContentCache = new Map<string, { pages: string[]; timestamp: number }>();
+const PDF_CACHE_TTL = 30 * 60 * 1000; // 30 minutos
+
+// Cache para contexto extraído por topic (evita re-procesar)
+const contextCache = new Map<string, { context: string; references: string[]; timestamp: number }>();
+const CONTEXT_CACHE_TTL = 15 * 60 * 1000; // 15 minutos
+
 // PDF processing (server-side)
 // Using pdfjs-dist in Node/Edge can be tricky; we defensively import and cap sizes.
 async function extractTextFromPdfBuffer(buf: ArrayBuffer): Promise<string[]> {
@@ -79,6 +87,34 @@ async function fetchPdfArrayBuffer(url: string): Promise<ArrayBuffer | null> {
   }
 }
 
+// Función optimizada para obtener páginas de PDF con caché
+async function getPdfPagesWithCache(url: string): Promise<string[]> {
+  // Verificar caché
+  const cached = pdfContentCache.get(url);
+  if (cached && Date.now() - cached.timestamp < PDF_CACHE_TTL) {
+    console.log('[generate-quiz] Usando PDF desde caché:', url.substring(0, 50));
+    return cached.pages;
+  }
+  
+  // Descargar y extraer
+  const buf = await fetchPdfArrayBuffer(url);
+  if (!buf) return [];
+  
+  const pages = await extractTextFromPdfBuffer(buf);
+  
+  // Guardar en caché
+  if (pages.length > 0) {
+    // Limpiar entradas antiguas si hay más de 5
+    if (pdfContentCache.size > 5) {
+      const oldestKey = pdfContentCache.keys().next().value;
+      if (oldestKey) pdfContentCache.delete(oldestKey);
+    }
+    pdfContentCache.set(url, { pages, timestamp: Date.now() });
+  }
+  
+  return pages;
+}
+
 function selectRelevantContext(pages: string[], topic: string, subjectHint?: string, maxChars = 8000): { context: string; usedPageIndexes: number[] } {
   if (!pages?.length) return { context: '', usedPageIndexes: [] };
   const terms = (topic.toLowerCase().split(/[^a-záéíóúñü0-9]+/i).filter(Boolean));
@@ -107,19 +143,31 @@ function selectRelevantContext(pages: string[], topic: string, subjectHint?: str
 }
 
 async function collectContextForInput(input: GenerateQuizInput): Promise<{ context: string; references: string[] }> {
+  // Generar clave de caché para el contexto
+  const contextKey = `${input.courseName}_${input.bookTitle}_${input.topic.toLowerCase().trim()}`;
+  
+  // Verificar caché de contexto
+  const cachedContext = contextCache.get(contextKey);
+  if (cachedContext && Date.now() - cachedContext.timestamp < CONTEXT_CACHE_TTL) {
+    console.log('[generate-quiz] Usando contexto desde caché para:', input.topic);
+    return { context: cachedContext.context, references: cachedContext.references };
+  }
+  
   // Identify PDFs by course and subject/book
   const course = input.courseName;
   const hint = input.bookTitle;
   const candidates = bookPDFs.filter(b => b.course === course && (b.title === hint || b.subject === hint));
   const refs: string[] = [];
   let combinedContext = '';
+  
   for (const b of candidates) {
     const url = toDriveDownloadUrl(b);
     if (!url) continue;
-    const buf = await fetchPdfArrayBuffer(url);
-    if (!buf) continue;
-    const pages = await extractTextFromPdfBuffer(buf);
+    
+    // Usar función con caché en lugar de descargar directamente
+    const pages = await getPdfPagesWithCache(url);
     if (!pages.length) continue;
+    
     const { context } = selectRelevantContext(pages, input.topic, b.subject, 6000);
     if (context) {
       combinedContext += (combinedContext ? '\n\n' : '') + `Fuente: ${b.title} (${b.subject})\n` + context;
@@ -127,6 +175,16 @@ async function collectContextForInput(input: GenerateQuizInput): Promise<{ conte
     }
     if (combinedContext.length > 14_000) break; // cap total
   }
+  
+  // Guardar en caché de contexto
+  if (combinedContext) {
+    if (contextCache.size > 20) {
+      const oldestKey = contextCache.keys().next().value;
+      if (oldestKey) contextCache.delete(oldestKey);
+    }
+    contextCache.set(contextKey, { context: combinedContext, references: refs, timestamp: Date.now() });
+  }
+  
   return { context: combinedContext, references: refs };
 }
 

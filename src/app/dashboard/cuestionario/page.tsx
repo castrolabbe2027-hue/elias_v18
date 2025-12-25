@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '@/contexts/language-context';
 import { Button } from '@/components/ui/button';
@@ -12,11 +12,14 @@ import { BookCourseSelector } from '@/components/common/book-course-selector';
 import { generateQuiz } from '@/ai/flows/generate-quiz';
 import { useToast } from "@/hooks/use-toast";
 import { useAIProgress } from "@/hooks/use-ai-progress";
-import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { contentDB } from '@/lib/sql-content';
 import { useAuth } from '@/contexts/auth-context';
+
+// Cache para evitar regenerar el mismo quiz
+const quizCache = new Map<string, { quiz: string; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
 export default function CuestionarioPage() {
   const { translate, language: currentUiLanguage } = useLanguage();
@@ -29,6 +32,88 @@ export default function CuestionarioPage() {
   const [topic, setTopic] = useState('');
   const [quizResult, setQuizResult] = useState('');
   const [currentTopicForDisplay, setCurrentTopicForDisplay] = useState('');
+  
+  // Ref para evitar llamadas duplicadas
+  const isGeneratingRef = useRef(false);
+
+  // Función para generar clave de caché
+  const getCacheKey = useCallback((book: string, subject: string, course: string, topicStr: string, lang: string) => {
+    return `${book || subject}_${course}_${topicStr.toLowerCase().trim()}_${lang}`;
+  }, []);
+
+  // Función para verificar caché
+  const getFromCache = useCallback((key: string) => {
+    const cached = quizCache.get(key);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return cached.quiz;
+    }
+    if (cached) {
+      quizCache.delete(key); // Limpiar caché expirado
+    }
+    return null;
+  }, []);
+
+  // Función para guardar en caché
+  const saveToCache = useCallback((key: string, quiz: string) => {
+    // Limpiar entradas antiguas si hay más de 10
+    if (quizCache.size > 10) {
+      const oldestKey = quizCache.keys().next().value;
+      if (oldestKey) quizCache.delete(oldestKey);
+    }
+    quizCache.set(key, { quiz, timestamp: Date.now() });
+  }, []);
+
+  // Función optimizada para persistir quiz (no bloquea UI)
+  const persistQuizAsync = useCallback((quizData: {
+    quiz: string;
+    topic: string;
+    book: string;
+    course: string;
+  }) => {
+    // Ejecutar en siguiente tick para no bloquear
+    setTimeout(async () => {
+      try {
+        await contentDB.saveQuiz({
+          id: crypto.randomUUID(),
+          userId: (user as any)?.id || null,
+          username: user?.username || null,
+          courseId: quizData.course || null,
+          sectionId: null,
+          subjectName: quizData.book || null,
+          topic: quizData.topic,
+          quiz: quizData.quiz,
+          language: currentUiLanguage,
+          createdAt: new Date().toISOString()
+        });
+      } catch (e) { 
+        console.warn('[Quiz] No se pudo persistir en BD', e); 
+      }
+    }, 0);
+  }, [user, currentUiLanguage]);
+
+  // Función optimizada para actualizar contador (no bloquea UI)
+  const updateQuizCounterAsync = useCallback(() => {
+    setTimeout(() => {
+      try {
+        const currentCount = parseInt(localStorage.getItem('quizzesCreatedCount') || '0', 10);
+        localStorage.setItem('quizzesCreatedCount', (currentCount + 1).toString());
+        window.dispatchEvent(new Event('localStorageUpdate'));
+      } catch (e: any) {
+        if (e?.name === 'QuotaExceededError' || e?.message?.includes('quota')) {
+          // Limpiar claves grandes/innecesarias
+          ['smart-student-tasks', 'smart-student-task-comments', 'smart-student-evaluations',
+           'smart-student-evaluation-results', 'smart-student-users', 'smart-student-courses',
+           'smart-student-sections', 'smart-student-student-assignments'
+          ].forEach(key => localStorage.removeItem(key));
+          // Reintentar
+          try {
+            const count = parseInt(localStorage.getItem('quizzesCreatedCount') || '0', 10);
+            localStorage.setItem('quizzesCreatedCount', (count + 1).toString());
+          } catch {}
+        }
+      }
+    }, 0);
+  }, []);
 
   const handleGenerateQuiz = async () => {
     if (!selectedBook && !selectedSubject) {
@@ -41,6 +126,28 @@ export default function CuestionarioPage() {
       return;
     }
     
+    // Evitar llamadas duplicadas
+    if (isGeneratingRef.current) {
+      console.log('[Quiz] Generación ya en progreso, ignorando...');
+      return;
+    }
+    
+    // Verificar caché primero
+    const cacheKey = getCacheKey(selectedBook, selectedSubject, selectedCourse, currentTopic, currentUiLanguage);
+    const cachedQuiz = getFromCache(cacheKey);
+    if (cachedQuiz) {
+      console.log('[Quiz] Usando resultado en caché');
+      setQuizResult(cachedQuiz);
+      setCurrentTopicForDisplay(currentTopic);
+      toast({ 
+        title: translate('quizGeneratedTitle'), 
+        description: `${translate('quizGeneratedDesc')} (caché)`,
+        variant: 'default'
+      });
+      return;
+    }
+    
+    isGeneratingRef.current = true;
     setQuizResult('');
     setCurrentTopicForDisplay(currentTopic);
     
@@ -48,67 +155,26 @@ export default function CuestionarioPage() {
     const progressInterval = startProgress('quiz', 7000);
     
     try {
-      try {
-        const result = await generateQuiz({
-          bookTitle: selectedBook || selectedSubject,
-          topic: currentTopic,
-          courseName: selectedCourse || "General", 
-          language: currentUiLanguage,
-        });
-        setQuizResult(result.quiz);
-        try {
-          await contentDB.saveQuiz({
-            id: crypto.randomUUID(),
-            userId: (user as any)?.id || null,
-            username: user?.username || null,
-            courseId: selectedCourse || null,
-            sectionId: null,
-            subjectName: selectedBook || selectedSubject || null,
-            topic: currentTopic,
-            quiz: result.quiz,
-            language: currentUiLanguage,
-            createdAt: new Date().toISOString()
-          });
-        } catch (e) { console.warn('[Quiz] No se pudo persistir en BD', e); }
-      } catch (err: any) {
-        // Cualquier falla del Server Action → fallback a la API
-        console.warn('[Cuestionario] Server Action falló; usando API /api/generate-quiz:', err?.message || err);
-        const resp = await fetch('/api/generate-quiz', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            bookTitle: selectedBook || selectedSubject,
-            topic: currentTopic,
-            courseName: selectedCourse || 'General',
-            language: currentUiLanguage,
-          })
-        });
-        if (!resp.ok) {
-          let errMsg = `HTTP ${resp.status}`;
-          try {
-            const data = await resp.json();
-            if (data?.error) errMsg = data.error;
-          } catch {}
-          throw new Error(errMsg);
-        }
-        const data = await resp.json().catch(() => null);
-        if (!data || !data.quiz) throw new Error('Respuesta inválida del generador de cuestionarios');
-        setQuizResult(data.quiz);
-        try {
-          await contentDB.saveQuiz({
-            id: crypto.randomUUID(),
-            userId: (user as any)?.id || null,
-            username: user?.username || null,
-            courseId: selectedCourse || null,
-            sectionId: null,
-            subjectName: selectedBook || selectedSubject || null,
-            topic: currentTopic,
-            quiz: data.quiz,
-            language: currentUiLanguage,
-            createdAt: new Date().toISOString()
-          });
-        } catch (e) { console.warn('[Quiz] No se pudo persistir en BD', e); }
-      }
+      // Llamada única a Server Action - sin fallback API redundante
+      const result = await generateQuiz({
+        bookTitle: selectedBook || selectedSubject,
+        topic: currentTopic,
+        courseName: selectedCourse || "General", 
+        language: currentUiLanguage,
+      });
+      
+      setQuizResult(result.quiz);
+      
+      // Guardar en caché
+      saveToCache(cacheKey, result.quiz);
+      
+      // Persistir de forma asíncrona (no bloquea UI)
+      persistQuizAsync({
+        quiz: result.quiz,
+        topic: currentTopic,
+        book: selectedBook || selectedSubject,
+        course: selectedCourse
+      });
       
       // Show success notification
       toast({ 
@@ -117,40 +183,14 @@ export default function CuestionarioPage() {
         variant: 'default'
       });
       
-      const currentCount = parseInt(localStorage.getItem('quizzesCreatedCount') || '0', 10);
-      try {
-        localStorage.setItem('quizzesCreatedCount', (currentCount + 1).toString());
-        try { window.dispatchEvent(new Event('localStorageUpdate')); } catch {}
-      } catch (e: any) {
-        if (e?.name === 'QuotaExceededError' || e?.message?.includes('quota')) {
-          // Limpiar claves grandes/innecesarias
-          const keysToRemove = [
-            'smart-student-tasks',
-            'smart-student-task-comments',
-            'smart-student-evaluations',
-            'smart-student-evaluation-results',
-            'smart-student-users',
-            'smart-student-courses',
-            'smart-student-sections',
-            'smart-student-student-assignments'
-          ];
-          keysToRemove.forEach(key => localStorage.removeItem(key));
-          // Reintentar guardar el contador
-          try {
-            localStorage.setItem('quizzesCreatedCount', (currentCount + 1).toString());
-            try { window.dispatchEvent(new Event('localStorageUpdate')); } catch {}
-          } catch (err) {
-            toast({ title: translate('errorGenerating'), description: 'No se pudo guardar el contador de cuestionarios. Libera espacio en tu navegador.', variant: 'destructive'});
-          }
-        } else {
-          throw e;
-        }
-      }
+      // Actualizar contador de forma asíncrona
+      updateQuizCounterAsync();
     } catch (error) {
       console.error("Error generating quiz:", error);
       toast({ title: translate('errorGenerating'), description: (error as Error).message, variant: 'destructive'});
       setQuizResult(`<p class="text-destructive">${translate('errorGenerating')}</p>`);
     } finally {
+      isGeneratingRef.current = false;
       stopProgress(progressInterval);
     }
   };
