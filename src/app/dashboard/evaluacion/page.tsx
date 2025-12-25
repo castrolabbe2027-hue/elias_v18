@@ -1571,29 +1571,27 @@ export default function EvaluacionPage() {
               onSubjectChange={setSelectedSubject}
               initialBookNameToSelect={initialBookFromQuery}
             />
-            {user?.role !== 'teacher' && (
-              <div className="space-y-2">
-                <Label htmlFor="question-count-select" className="text-left block">
-                  {translate('questionCountLabel')}
-                </Label>
-                <Select 
-                  value={selectedQuestionCount.toString()} 
-                  onValueChange={(value) => setSelectedQuestionCount(parseInt(value))}
-                >
-                  <SelectTrigger id="question-count-select" className="text-base md:text-sm">
-                    <SelectValue placeholder={translate('evalQuestionCountPlaceholder', { defaultValue: 'Selecciona la cantidad de preguntas' })} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="5">5 preguntas</SelectItem>
-                    <SelectItem value="10">10 preguntas</SelectItem>
-                    <SelectItem value="15">15 preguntas</SelectItem>
-                    <SelectItem value="20">20 preguntas</SelectItem>
-                    <SelectItem value="25">25 preguntas</SelectItem>
-                    <SelectItem value="30">30 preguntas</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div className="space-y-2">
+              <Label htmlFor="question-count-select" className="text-left block">
+                {translate('questionCountLabel')}
+              </Label>
+              <Select
+                value={selectedQuestionCount.toString()}
+                onValueChange={(value) => setSelectedQuestionCount(parseInt(value))}
+              >
+                <SelectTrigger id="question-count-select" className="text-base md:text-sm">
+                  <SelectValue placeholder={translate('evalQuestionCountPlaceholder', { defaultValue: 'Selecciona la cantidad de preguntas' })} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5 preguntas</SelectItem>
+                  <SelectItem value="10">10 preguntas</SelectItem>
+                  <SelectItem value="15">15 preguntas</SelectItem>
+                  <SelectItem value="20">20 preguntas</SelectItem>
+                  <SelectItem value="25">25 preguntas</SelectItem>
+                  <SelectItem value="30">30 preguntas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="eval-topic-input" className="text-left block">{translate('evalTopicPlaceholder')}</Label>
               <Textarea
