@@ -1,182 +1,331 @@
-# SMART STUDENT WEB — Plataforma Integral de Gestión Estudiantil (v14)
+<p align="center">
+  <img src="public/logo.svg" alt="Smart Student Web" width="120" />
+</p>
 
-**Versión:** v14 — Evaluaciones Inteligentes Específicas por Tema y Optimización de Almacenamiento.
+<h1 align="center">🎓 SMART STUDENT WEB</h1>
+
+<p align="center">
+  <strong>Plataforma Integral de Gestión Educativa con IA</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/version-Diciembre%202025-blue?style=for-the-badge" alt="Version" />
+  <img src="https://img.shields.io/badge/Next.js-16.1-black?style=for-the-badge&logo=next.js" alt="Next.js" />
+  <img src="https://img.shields.io/badge/React-18.3-61DAFB?style=for-the-badge&logo=react" alt="React" />
+  <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?style=for-the-badge&logo=typescript" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Firebase-11.9-FFCA28?style=for-the-badge&logo=firebase" alt="Firebase" />
+  <img src="https://img.shields.io/badge/Genkit%20AI-1.12-4285F4?style=for-the-badge&logo=google" alt="Genkit" />
+</p>
+
+<p align="center">
+  <a href="#-características">Características</a> •
+  <a href="#-instalación">Instalación</a> •
+  <a href="#-módulos">Módulos</a> •
+  <a href="#-tecnologías">Tecnologías</a> •
+  <a href="#-api">API</a>
+</p>
 
 ---
 
-## ✨ Resumen rápido
-- **Objetivo:** Generar evaluaciones educativas específicas por tema usando IA (Genkit + Gemini) y mejorar la robustez del almacenamiento local.
-- **Stack:** Next.js 15 (React 18 + TypeScript), Tailwind CSS, Radix UI, Genkit + Google Generative AI (Gemini), Cloudinary, Tesseract.js.
-- **Dev:** puerto 9002 (Turbopack).
+## 📋 Descripción
+
+**Smart Student Web** es una plataforma educativa completa que integra inteligencia artificial para automatizar y optimizar la gestión escolar. Diseñada para administradores, profesores, estudiantes y apoderados.
+
+### 🎯 Objetivo Principal
+Transformar la gestión educativa mediante IA generativa (Genkit + Gemini) para crear evaluaciones personalizadas, automatizar tareas administrativas y proporcionar insights en tiempo real.
 
 ---
 
-## 🧠 Novedades principales (v14)
-- **Evaluaciones por tema:** Prompts y flujos IA optimizados para producir preguntas específicas y pedagógicamente relevantes.
-- **Base de conocimientos educativa:** Conteúdos por materia/tema para mejorar la calidad de las preguntas.
-- **Manejo de QuotaExceededError:** Límites, limpieza preventiva y fallback para evitar pérdidas de datos por localStorage.
-- **Validaciones y UX:** Verificación robusta de curso/asignatura/tema y feedback claro al usuario.
+## ✨ Características
+
+### 🤖 Inteligencia Artificial
+- **Generación de Evaluaciones** — Crea pruebas específicas por tema con IA
+- **Análisis de Contenido PDF** — Extracción inteligente de texto y temas
+- **Evaluaciones Adaptativas** — Preguntas ajustadas al nivel del estudiante
+
+### 📊 Gestión Académica
+- **Calificaciones** — Sistema completo con carga masiva CSV
+- **Asistencia** — Control diario con reportes automáticos
+- **Tareas** — Asignación, seguimiento y calificación
+- **Libros Digitales** — Biblioteca integrada con OCR
+
+### 👥 Gestión de Usuarios
+- **Multi-rol** — Admin, Profesor, Estudiante, Apoderado
+- **Firebase Auth** — Autenticación segura
+- **Perfiles Personalizados** — Dashboard adaptado por rol
+
+### 📈 Reportes y Estadísticas
+- **KPIs en Tiempo Real** — Métricas de rendimiento
+- **Gráficos Interactivos** — Visualizaciones con Recharts
+- **Exportación** — PDF, Excel, Word, PowerPoint
+
+### 💬 Comunicación
+- **Notificaciones** — Sistema de alertas en tiempo real
+- **Mensajería** — Comunicación entre roles
+- **Calendario** — Eventos y recordatorios
 
 ---
 
-## ⚙️ Instalación rápida
+## 🚀 Instalación
+
+### Requisitos Previos
+- Node.js 18+
+- npm o yarn
+- Cuenta de Google Cloud (para Genkit AI)
+- Firebase Project
+
+### Pasos
+
 ```bash
-git clone <repo>
-cd <repo>
+# 1. Clonar repositorio
+git clone https://github.com/tu-usuario/smart-student-web.git
+cd smart-student-web
+
+# 2. Instalar dependencias
 npm install
+
+# 3. Configurar variables de entorno
 cp .env.example .env.local
-# Añade tu API key de Google AI en .env.local
+
+# 4. Iniciar desarrollo
 npm run dev
-# http://localhost:9002
 ```
 
-### Variables de entorno importantes
-```bash
-GOOGLE_API_KEY=tu_google_ai_api_key
+### Variables de Entorno
+
+```env
+# Google AI (Genkit)
+GOOGLE_API_KEY=tu_api_key_aqui
+
+# Firebase
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+
+# Cloudinary (Imágenes)
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+
+# App
 NEXT_PUBLIC_API_URL=http://localhost:9002
-CLOUDINARY_CLOUD_NAME=...
 ```
 
 ---
 
-## 📁 Estructura clave (resumen)
-- `src/ai/` → Flujos y configuración IA (Genkit)
-- `src/app/dashboard/evaluacion/` → Módulo de generación de evaluaciones
-- `src/api/extract-pdf-content/` → Extracción y parsing de PDF
-- `src/lib/` → Utilidades y datos (e.g., books-data)
+## 📦 Módulos
+
+| Módulo | Descripción | Ruta |
+|--------|-------------|------|
+| 🏠 **Dashboard** | Panel principal con KPIs | `/dashboard` |
+| 📝 **Evaluaciones** | Generación IA de pruebas | `/dashboard/evaluacion` |
+| 📊 **Calificaciones** | Gestión de notas | `/dashboard/calificaciones` |
+| ✅ **Asistencia** | Control de asistencia | `/dashboard/asistencia` |
+| 📚 **Tareas** | Gestión de actividades | `/dashboard/tareas` |
+| 📖 **Libros** | Biblioteca digital | `/dashboard/libros` |
+| 📅 **Calendario** | Eventos y agenda | `/dashboard/calendario` |
+| 💬 **Comunicaciones** | Mensajería interna | `/dashboard/comunicaciones` |
+| 📈 **Estadísticas** | Reportes y gráficos | `/dashboard/estadisticas` |
+| 👤 **Perfil** | Configuración usuario | `/dashboard/perfil` |
+| ⚙️ **Admin** | Panel administrativo | `/dashboard/admin` |
+| 👥 **Usuarios** | Gestión de usuarios | `/dashboard/gestion-usuarios` |
 
 ---
 
-## 🛠 Comandos útiles
-- `npm run dev` — Desarrollo (Turbopack)
-- `npm run build` — Construir producción
-- `npm run genkit:dev` — Genkit local (IA)
-- `npm run lint` / `npm run typecheck`
+## 🛠 Tecnologías
+
+### Frontend
+| Tecnología | Versión | Uso |
+|------------|---------|-----|
+| Next.js | 16.1 | Framework React |
+| React | 18.3 | UI Library |
+| TypeScript | 5.x | Tipado estático |
+| Tailwind CSS | 3.4 | Estilos |
+| Radix UI | Latest | Componentes accesibles |
+| Framer Motion | 12.x | Animaciones |
+| Recharts | 2.15 | Gráficos |
+
+### Backend & AI
+| Tecnología | Versión | Uso |
+|------------|---------|-----|
+| Genkit | 1.12 | Framework IA |
+| Google Generative AI | 0.24 | Modelo Gemini |
+| Firebase | 11.9 | Auth & Database |
+| Tesseract.js | 6.0 | OCR |
+
+### Utilidades
+| Tecnología | Uso |
+|------------|-----|
+| jsPDF | Generación PDF |
+| xlsx | Procesamiento Excel |
+| PapaParse | Parsing CSV |
+| Cloudinary | Gestión imágenes |
+
+---
+
+## 🔌 API
+
+### Endpoints Principales
+
+#### `POST /api/generate-evaluation`
+Genera evaluaciones con IA.
+
+```typescript
+// Request
+{
+  "course": "4to Básico",
+  "subject": "Ciencias Naturales",
+  "topic": "Sistema Respiratorio",
+  "numQuestions": 10
+}
+
+// Response
+{
+  "id": "eval_abc123",
+  "questions": [
+    {
+      "type": "mcq",
+      "question": "¿Cuál es la función principal de los pulmones?",
+      "options": ["A) Bombear sangre", "B) Intercambio gaseoso", ...],
+      "correctAnswer": "B"
+    }
+  ]
+}
+```
+
+#### `POST /api/extract-pdf-content`
+Extrae contenido de PDFs.
+
+```typescript
+// Request (multipart/form-data)
+file: <archivo.pdf>
+
+// Response
+{
+  "pages": 12,
+  "topics": ["Sistema Respiratorio", "Célula"],
+  "text": "Contenido extraído..."
+}
+```
+
+---
+
+## 📂 Estructura del Proyecto
+
+```
+src/
+├── ai/                    # Flujos Genkit IA
+│   ├── flows/            # Definición de flujos
+│   └── prompts/          # Templates de prompts
+├── app/                   # App Router Next.js
+│   ├── api/              # API Routes
+│   ├── dashboard/        # Páginas dashboard
+│   └── login/            # Autenticación
+├── components/            # Componentes React
+│   ├── ui/               # Componentes base
+│   └── dashboard/        # Componentes específicos
+├── contexts/              # React Contexts
+├── hooks/                 # Custom Hooks
+├── lib/                   # Utilidades y datos
+├── services/              # Servicios externos
+├── types/                 # Definiciones TypeScript
+└── utils/                 # Funciones helper
+```
+
+---
+
+## 🖥 Comandos
+
+```bash
+# Desarrollo
+npm run dev              # Servidor desarrollo (puerto 9002)
+npm run genkit:dev       # Genkit AI local
+
+# Build
+npm run build            # Compilar producción
+npm run start            # Iniciar producción
+
+# Calidad
+npm run lint             # ESLint
+npm run typecheck        # TypeScript check
+
+# Utilidades
+npm run import:grades    # Importar calificaciones
+npm run firebase:check   # Verificar Firebase
+```
+
+---
+
+## 🔧 Solución de Problemas
+
+### QuotaExceededError (localStorage)
+```javascript
+// En consola del navegador
+localStorage.clear(); // Limpieza total
+// o selectiva:
+Object.keys(localStorage)
+  .filter(k => k.startsWith('smart-student-'))
+  .forEach(k => localStorage.removeItem(k));
+```
+
+### Error de API Key
+1. Verificar `GOOGLE_API_KEY` en `.env.local`
+2. Reiniciar servidor de desarrollo
+3. Verificar cuota en Google Cloud Console
+
+### Firebase Connection
+```bash
+npm run firebase:check  # Diagnóstico
+```
+
+---
+
+## 📊 Estado del Proyecto
+
+| Funcionalidad | Estado |
+|---------------|--------|
+| Evaluaciones IA | ✅ Completado |
+| Calificaciones | ✅ Completado |
+| Asistencia | ✅ Completado |
+| Tareas | ✅ Completado |
+| Comunicaciones | ✅ Completado |
+| Multi-idioma | ✅ Completado |
+| PWA | 🔄 En progreso |
+| App Móvil | 📋 Planificado |
 
 ---
 
 ## 🤝 Contribuir
-1. Fork
-2. `git checkout -b feature/mi-cambio`
-3. Hacer commits claros
-4. Crear PR
 
----
+1. Fork del repositorio
+2. Crear rama feature: `git checkout -b feature/nueva-funcionalidad`
+3. Commit cambios: `git commit -m 'feat: nueva funcionalidad'`
+4. Push: `git push origin feature/nueva-funcionalidad`
+5. Crear Pull Request
 
-## ❗ Notas y troubleshooting
-- Si ves **QuotaExceededError**, el sistema intenta reducir y recuperar datos automáticamente; para recuperación manual puedes limpiar claves específicas de `localStorage`.
-- Verifica que `GOOGLE_API_KEY` esté presente para generar contenido IA real.
-
-### Comandos y acciones útiles 🔧
-- Iniciar Genkit (modo desarrollo):
-```bash
-npm run genkit:dev
-```
-- Ver logs de la app en desarrollo:
-```bash
-npm run dev
-# Revisa la consola donde corre la app y la del servidor Genkit
-```
-- Limpiar claves problemáticas en consola del navegador:
-```javascript
-// Elimina solo evaluaciones locales
-localStorage.removeItem('smart-student-evaluations');
-// Elimina historiales de evaluaciones
-Object.keys(localStorage)
-  .filter(k => k.startsWith('evaluationHistory_'))
-  .forEach(k => localStorage.removeItem(k));
-```
-- Recuperación manual ante QuotaExceededError (pasos):
-  1. Exportar historial importante (si es posible) desde la UI de export/import.
-  2. Ejecutar limpieza selectiva de claves antiguas.
-  3. Reiniciar la app y volver a intentar la operación.
-
----
-
-## 🧾 API y Endpoints (resumen) 🔌
-A continuación un resumen de los endpoints más relevantes. Consulta `src/app/api` para definiciones completas.
-
-### POST /api/extract-pdf-content
-- Uso: Extraer texto y metadatos de un PDF (upload o URL).
-- Body (form-data o JSON): `{ file: <archivo> }` o `{ url: "https://..." }`
-- Respuesta (ejemplo):
-```json
-{
-  "pages": 12,
-  "topics": ["Sistema Respiratorio","Célula"],
-  "text": "..."
-}
-```
-
-Ejemplo cURL:
-```bash
-curl -X POST "http://localhost:9002/api/extract-pdf-content" -F "file=@material.pdf"
-```
-
-### POST /api/generate-evaluation
-- Uso: Generar una evaluación específica por curso/asignatura/tema.
-- Body (JSON): `{ "course":"4to Básico", "subject":"Ciencias Naturales", "topic":"Sistema Respiratorio", "numQuestions":10 }`
-- Respuesta (ejemplo):
-```json
-{
-  "id": "eval_123",
-  "questions": [ { "type":"mcq", "question":"...", "options":[...] }, ... ]
-}
-```
-
-Ejemplo fetch (Node/Browser):
-```js
-await fetch('/api/generate-evaluation', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ course, subject, topic, numQuestions })
-});
-```
-
----
-
-## ✍️ Ejemplos de uso y pantallazos 🖼️
-- Flujo típico:
-  1. Admin → Dashboard → Evaluación → Selecciona curso/asignatura/tema.
-  2. Hacer click en "Generar evaluación" y revisar preguntas generadas.
-  3. Exportar/guardar la evaluación si es correcta.
-
-- Ejemplo práctico (curl):
-```bash
-curl -X POST 'http://localhost:9002/api/generate-evaluation' \
-  -H 'Content-Type: application/json' \
-  -d '{"course":"4to Básico","subject":"Ciencias Naturales","topic":"Fotosíntesis","numQuestions":5}'
-```
-
-- Pantallazos (placeholder):
-  - `/public/screenshots/evaluacion.png` — pantalla de generación de evaluación
-  - `/public/screenshots/kpis.png` — panel de KPIs
-
-> Añade pantallazos reales en `public/screenshots/` con los nombres anteriores para que se muestren aquí.
-
----
-
-## 📊 KPIs y métricas clave
-| KPI | Objetivo | Estado |
-|---|---:|:---:|
-| Preguntas específicas por tema | 100% | ✅ Implementado |
-| Errores QuotaExceededError | 0 | ✅ Auto-recover |
-| Temas implementados | 50+ | ✅ |
-| Cobertura tests unitarios | >=80% | ⚠️ En progreso |
-| Latencia IA (p99) | < 500ms | ⚠️ Monitoring |
-
----
-
-## 🔍 Consejos de debugging rápido
-- Revisa que `GOOGLE_API_KEY` esté en `.env.local` y no en `.env` compartido.
-- Para reproducir problemas con IA, habilita logs en Genkit y reproduce la petición problemática.
-- Si los datos no aparecen en UI: inspecciona `localStorage` y las claves `smart-student-*`.
+### Convenciones de Commits
+- `feat:` Nueva funcionalidad
+- `fix:` Corrección de bug
+- `docs:` Documentación
+- `style:` Formato/estilos
+- `refactor:` Refactorización
+- `test:` Tests
 
 ---
 
 ## 📄 Licencia
-MIT — ver `LICENSE`.
+
+MIT License - ver [LICENSE](LICENSE) para detalles.
 
 ---
 
-¿Quieres que formatee este README con más secciones (Ej.: ejemplos de API, pantallazos, tabla de KPIs) o lo dejamos así por ahora? ❤️
+<p align="center">
+  <strong>Desarrollado con ❤️ para la educación</strong>
+</p>
+
+<p align="center">
+  <sub>Versión Diciembre 2025 | Smart Student Web</sub>
+</p>

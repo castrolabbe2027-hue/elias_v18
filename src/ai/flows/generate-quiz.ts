@@ -21,13 +21,14 @@ async function extractTextFromPdfBuffer(buf: ArrayBuffer): Promise<string[]> {
   try {
     // Dynamic import using eval to avoid static bundling
     const dynamicImport = new Function('m', 'return import(m)') as (m: string) => Promise<any>;
+    // Use legacy build for Node.js environments (no DOMMatrix dependency)
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    const pdfjsLib = await dynamicImport('pdfjs-dist/build/pdf.mjs');
-    // Nota: en entorno Node, el worker no es necesario
+    const pdfjsLib = await dynamicImport('pdfjs-dist/legacy/build/pdf.mjs');
+    // Nota: en entorno Node, el worker no es necesario - usar string vacío
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    pdfjsLib.GlobalWorkerOptions.workerSrc = undefined;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '';
     const loadingTask = pdfjsLib.getDocument({ data: buf });
     const pdf = await loadingTask.promise;
     const pages: string[] = [];
