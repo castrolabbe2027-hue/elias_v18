@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useLanguage } from '@/contexts/language-context';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
@@ -8,9 +8,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { ClipboardList, PlayCircle, ChevronLeft, ChevronRight, PartyPopper, Award, Timer } from 'lucide-react';
+import { ClipboardList, PlayCircle, ChevronLeft, ChevronRight, PartyPopper, Award, Timer, BookOpen, Loader2 } from 'lucide-react';
 import { BookCourseSelector } from '@/components/common/book-course-selector';
 import { generateEvaluationContent, type EvaluationQuestion } from '@/ai/flows/generate-evaluation-content';
+import { analyzeSubjectTopics } from '@/ai/flows/analyze-subject-topics';
 import { submitEvaluationAction, generateEvaluationAction } from '@/actions/evaluation-actions';
 import { useToast } from "@/hooks/use-toast";
 import { useAIProgress } from "@/hooks/use-ai-progress";
@@ -50,6 +51,13 @@ export default function EvaluacionPage() {
   const [topic, setTopic] = useState('');
   const [currentTopicForDisplay, setCurrentTopicForDisplay] = useState('');
   const [selectedQuestionCount, setSelectedQuestionCount] = useState(15);
+  
+  // Estados para análisis automático de temas de cualquier asignatura
+  const [subjectTopics, setSubjectTopics] = useState<string[]>([]);
+  const [selectedSubjectTopic, setSelectedSubjectTopic] = useState<string>('');
+  const [isAnalyzingSubject, setIsAnalyzingSubject] = useState(false);
+  const [subjectBookTitle, setSubjectBookTitle] = useState<string>('');
+  const hasAnalyzedRef = useRef<string>('');
   
   // Evaluation state
   const [evaluationTitle, setEvaluationTitle] = useState('');
@@ -122,6 +130,64 @@ export default function EvaluacionPage() {
     
     checkLocalStorageQuota();
   }, []); // Run once on mount
+
+  // Detectar el tipo de asignatura para mostrar icono apropiado
+  const subjectIcon = useMemo(() => {
+    const s = `${selectedBook || ''} ${selectedSubject || ''}`.toLowerCase();
+    if (/matem|math|algebra|geometr/i.test(s)) return '🔢';
+    if (/lenguaje|comunicacion|language|literatura/i.test(s)) return '📚';
+    if (/ciencia|natural|science|biolog/i.test(s)) return '🔬';
+    if (/historia|geography|social|civica/i.test(s)) return '🌍';
+    return '📖';
+  }, [selectedBook, selectedSubject]);
+
+  // Analizar automáticamente los temas cuando se selecciona cualquier asignatura
+  useEffect(() => {
+    const analyzeKey = `${selectedCourse}_${selectedSubject}`;
+    
+    if (selectedCourse && selectedSubject && hasAnalyzedRef.current !== analyzeKey) {
+      hasAnalyzedRef.current = analyzeKey;
+      setIsAnalyzingSubject(true);
+      setSubjectTopics([]);
+      setSelectedSubjectTopic('');
+      setSubjectBookTitle('');
+      
+      console.log('[Evaluation] Starting subject analysis for:', selectedCourse, selectedSubject);
+      
+      analyzeSubjectTopics({
+        courseName: selectedCourse,
+        subjectName: selectedSubject,
+        language: currentUiLanguage,
+      }).then((res) => {
+        console.log('[Evaluation] Subject analysis result:', res);
+        if (res.topics && res.topics.length > 0) {
+          setSubjectTopics(res.topics);
+          setSubjectBookTitle(res.bookTitle || '');
+          toast({
+            title: translate('quizPdfAnalyzeDone') || 'Análisis completado',
+            description: `${translate('quizPdfTopicsFound') || 'Temas detectados'}: ${res.topics.length}`,
+            variant: 'default',
+          });
+        }
+      }).catch((e) => {
+        console.error('[Evaluation] Error analizando asignatura:', e);
+      }).finally(() => {
+        setIsAnalyzingSubject(false);
+      });
+    } else if (!selectedSubject) {
+      // Limpiar cuando no hay asignatura
+      setSubjectTopics([]);
+      setSelectedSubjectTopic('');
+      setSubjectBookTitle('');
+    }
+  }, [selectedCourse, selectedSubject, currentUiLanguage, toast, translate]);
+
+  // Cuando se selecciona un tema de la asignatura, actualizar el campo de tema
+  const handleSubjectTopicSelect = useCallback((value: string) => {
+    setSelectedSubjectTopic(value);
+    if (value) setTopic(value);
+  }, []);
+
   const [isAutoStartMode, setIsAutoStartMode] = useState(false);
   const [isTaskEvaluationSession, setIsTaskEvaluationSession] = useState(false);
   const [showReadyTransition, setShowReadyTransition] = useState(false);
@@ -1571,6 +1637,56 @@ export default function EvaluacionPage() {
               onSubjectChange={setSelectedSubject}
               initialBookNameToSelect={initialBookFromQuery}
             />
+
+            {/* Sección automática de temas desde el libro de la asignatura seleccionada */}
+            {selectedCourse && selectedSubject && (
+              <div className="space-y-3 p-4 border border-purple-500/30 rounded-lg bg-purple-500/5">
+                <div className="space-y-1">
+                  <Label className="text-left block font-semibold text-purple-600 dark:text-purple-400">
+                    <BookOpen className="w-4 h-4 inline mr-2" />
+                    {subjectIcon} {translate('evalSubjectTopicsTitle') || 'Temas de la Asignatura'}
+                  </Label>
+                  {subjectBookTitle && (
+                    <p className="text-left text-xs text-muted-foreground">
+                      📚 {subjectBookTitle}
+                    </p>
+                  )}
+                </div>
+
+                {isAnalyzingSubject ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {translate('evalAnalyzingSubject') || 'Analizando temas de la asignatura con IA...'}
+                  </div>
+                ) : subjectTopics.length > 0 ? (
+                  <div className="space-y-2">
+                    <Label className="text-left block text-sm">
+                      {translate('evalSelectTopic') || 'Selecciona un tema para la evaluación:'}
+                    </Label>
+                    <Select value={selectedSubjectTopic} onValueChange={handleSubjectTopicSelect}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={translate('evalChooseTopic') || 'Elige un tema…'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {subjectTopics.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {t}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-left text-xs text-muted-foreground">
+                      💡 {translate('evalTopicHint') || 'La evaluación incluirá preguntas variadas sobre el tema seleccionado.'}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-left text-xs text-muted-foreground">
+                    {translate('evalNoTopics') || 'No se encontraron temas. Puedes escribir el tema manualmente.'}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="question-count-select" className="text-left block">
                 {translate('questionCountLabel')}
@@ -1578,6 +1694,7 @@ export default function EvaluacionPage() {
               <Select
                 value={selectedQuestionCount.toString()}
                 onValueChange={(value) => setSelectedQuestionCount(parseInt(value))}
+                disabled={!selectedSubject}
               >
                 <SelectTrigger id="question-count-select" className="text-base md:text-sm">
                   <SelectValue placeholder={translate('evalQuestionCountPlaceholder', { defaultValue: 'Selecciona la cantidad de preguntas' })} />
@@ -1601,11 +1718,12 @@ export default function EvaluacionPage() {
                 onChange={(e) => setTopic(e.target.value)}
                 placeholder={translate('evalTopicPlaceholder')}
                 className="text-base md:text-sm"
+                disabled={!selectedSubject}
               />
             </div>
             <Button
               onClick={handleCreateEvaluation}
-              disabled={aiIsLoading}
+              disabled={aiIsLoading || !selectedSubject || !topic.trim()}
               className={cn(
                 "w-full font-semibold py-3 text-base md:text-sm home-card-button-purple"
               )}
