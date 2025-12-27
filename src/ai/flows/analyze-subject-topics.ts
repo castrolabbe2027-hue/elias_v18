@@ -34,7 +34,7 @@ function normalize(text: string): string {
 }
 
 // Detectar qué asignatura es
-function detectSubjectType(subjectName: string): 'math' | 'language' | 'science' | 'history' | 'other' {
+function detectSubjectType(subjectName: string): 'math' | 'language' | 'science' | 'history' | 'physics' | 'chemistry' | 'biology' | 'other' {
   const s = normalize(subjectName);
   
   if (/matem|math|algebra|geometr|trigonom|calculo|aritmet|matriz|estadistic|probabil/i.test(s)) {
@@ -43,7 +43,20 @@ function detectSubjectType(subjectName: string): 'math' | 'language' | 'science'
   if (/lenguaje|comunicacion|language|literature|literatura|gramatica|ortografia|lectura|escritura/i.test(s)) {
     return 'language';
   }
-  if (/ciencia|natural|science|biolog|quimic|fisic|anatomia|ecologia|medio ambiente/i.test(s)) {
+  // Detectar Física específicamente
+  if (/^fisica$|^physics$|fisica\s*\d|physics\s*\d/i.test(s)) {
+    return 'physics';
+  }
+  // Detectar Química específicamente
+  if (/^quimica$|^chemistry$|quimica\s*\d|chemistry\s*\d/i.test(s)) {
+    return 'chemistry';
+  }
+  // Detectar Biología específicamente
+  if (/^biologia$|^biology$|biologia\s*\d|biology\s*\d/i.test(s)) {
+    return 'biology';
+  }
+  // Ciencias Naturales general (básica)
+  if (/ciencia|natural|science/i.test(s) && !s.includes('social')) {
     return 'science';
   }
   if (/historia|geography|geografia|social|civica|educacion civica|sociedad/i.test(s)) {
@@ -68,7 +81,7 @@ function getCourseLevel(courseName: string): 'basico' | 'medio' | 'superior' {
 
 // Temas heurísticos por asignatura y nivel
 function getHeuristicTopics(
-  subjectType: 'math' | 'language' | 'science' | 'history' | 'other',
+  subjectType: 'math' | 'language' | 'science' | 'history' | 'physics' | 'chemistry' | 'biology' | 'other',
   level: 'basico' | 'medio' | 'superior',
   language: 'es' | 'en'
 ): string[] {
@@ -132,6 +145,72 @@ function getHeuristicTopics(
         'Bioquímica', 'Microbiología', 'Inmunología', 'Biotecnología',
         'Física cuántica', 'Relatividad', 'Astrofísica', 'Química analítica',
         'Nanotecnología', 'Genómica', 'Neurociencia'
+      ]
+    },
+    // FÍSICA - Temas específicos por nivel
+    physics: {
+      basico: [
+        'Fuerza y movimiento', 'Energía', 'Luz y sonido', 'Electricidad básica',
+        'Magnetismo', 'Calor y temperatura', 'Máquinas simples'
+      ],
+      medio: [
+        'Cinemática', 'Dinámica', 'Leyes de Newton', 'Trabajo y energía',
+        'Momentum y colisiones', 'Movimiento circular', 'Gravitación universal',
+        'Fluidos y presión', 'Ondas mecánicas', 'Ondas sonoras',
+        'Óptica geométrica', 'Óptica física', 'Electricidad y circuitos',
+        'Electromagnetismo', 'Inducción electromagnética', 'Termodinámica',
+        'Física moderna', 'Relatividad especial', 'Física cuántica introductoria',
+        'Física nuclear', 'Energía nuclear'
+      ],
+      superior: [
+        'Mecánica clásica avanzada', 'Electrodinámica', 'Física cuántica',
+        'Mecánica estadística', 'Relatividad general', 'Física de partículas',
+        'Física del estado sólido', 'Astrofísica', 'Cosmología'
+      ]
+    },
+    // QUÍMICA - Temas específicos por nivel
+    chemistry: {
+      basico: [
+        'Estados de la materia', 'Mezclas y soluciones', 'Cambios físicos y químicos',
+        'Propiedades de la materia', 'Átomos y moléculas básicos'
+      ],
+      medio: [
+        'Estructura atómica', 'Modelos atómicos', 'Tabla periódica',
+        'Configuración electrónica', 'Enlaces químicos', 'Enlace iónico',
+        'Enlace covalente', 'Enlace metálico', 'Nomenclatura química',
+        'Reacciones químicas', 'Estequiometría', 'Soluciones y concentración',
+        'Ácidos y bases', 'pH y neutralización', 'Termoquímica',
+        'Cinética química', 'Equilibrio químico', 'Química orgánica',
+        'Hidrocarburos', 'Grupos funcionales', 'Polímeros',
+        'Electroquímica', 'Pilas y baterías'
+      ],
+      superior: [
+        'Química analítica', 'Química física', 'Química inorgánica avanzada',
+        'Química orgánica avanzada', 'Bioquímica', 'Espectroscopía',
+        'Síntesis orgánica', 'Catálisis', 'Química ambiental'
+      ]
+    },
+    // BIOLOGÍA - Temas específicos por nivel
+    biology: {
+      basico: [
+        'Seres vivos', 'Plantas y animales', 'El cuerpo humano',
+        'Alimentación y nutrición', 'Los sentidos', 'Ecosistemas'
+      ],
+      medio: [
+        'La célula', 'Estructura celular', 'Organelos celulares',
+        'Membrana celular', 'División celular', 'Mitosis y meiosis',
+        'Genética mendeliana', 'ADN y ARN', 'Síntesis de proteínas',
+        'Mutaciones', 'Herencia y cromosomas', 'Evolución biológica',
+        'Selección natural', 'Origen de las especies', 'Clasificación de los seres vivos',
+        'Ecología', 'Flujo de energía', 'Ciclos biogeoquímicos',
+        'Biodiversidad', 'Anatomía humana', 'Sistemas del cuerpo humano',
+        'Sistema nervioso', 'Sistema endocrino', 'Sistema inmunológico',
+        'Reproducción humana', 'Microbiología', 'Virus y bacterias'
+      ],
+      superior: [
+        'Biología molecular', 'Genética molecular', 'Biotecnología',
+        'Ingeniería genética', 'Bioinformática', 'Neurobiología',
+        'Inmunología avanzada', 'Microbiología avanzada', 'Ecología avanzada'
       ]
     },
     history: {
@@ -230,6 +309,72 @@ function getHeuristicTopics(
         'Biochemistry', 'Microbiology', 'Immunology', 'Biotechnology',
         'Quantum physics', 'Relativity', 'Astrophysics', 'Analytical chemistry',
         'Nanotechnology', 'Genomics', 'Neuroscience'
+      ]
+    },
+    // PHYSICS - Specific topics by level
+    physics: {
+      basico: [
+        'Force and motion', 'Energy', 'Light and sound', 'Basic electricity',
+        'Magnetism', 'Heat and temperature', 'Simple machines'
+      ],
+      medio: [
+        'Kinematics', 'Dynamics', 'Newton\'s Laws', 'Work and energy',
+        'Momentum and collisions', 'Circular motion', 'Universal gravitation',
+        'Fluids and pressure', 'Mechanical waves', 'Sound waves',
+        'Geometric optics', 'Physical optics', 'Electricity and circuits',
+        'Electromagnetism', 'Electromagnetic induction', 'Thermodynamics',
+        'Modern physics', 'Special relativity', 'Introductory quantum physics',
+        'Nuclear physics', 'Nuclear energy'
+      ],
+      superior: [
+        'Advanced classical mechanics', 'Electrodynamics', 'Quantum physics',
+        'Statistical mechanics', 'General relativity', 'Particle physics',
+        'Solid state physics', 'Astrophysics', 'Cosmology'
+      ]
+    },
+    // CHEMISTRY - Specific topics by level
+    chemistry: {
+      basico: [
+        'States of matter', 'Mixtures and solutions', 'Physical and chemical changes',
+        'Properties of matter', 'Basic atoms and molecules'
+      ],
+      medio: [
+        'Atomic structure', 'Atomic models', 'Periodic table',
+        'Electron configuration', 'Chemical bonds', 'Ionic bonding',
+        'Covalent bonding', 'Metallic bonding', 'Chemical nomenclature',
+        'Chemical reactions', 'Stoichiometry', 'Solutions and concentration',
+        'Acids and bases', 'pH and neutralization', 'Thermochemistry',
+        'Chemical kinetics', 'Chemical equilibrium', 'Organic chemistry',
+        'Hydrocarbons', 'Functional groups', 'Polymers',
+        'Electrochemistry', 'Batteries and cells'
+      ],
+      superior: [
+        'Analytical chemistry', 'Physical chemistry', 'Advanced inorganic chemistry',
+        'Advanced organic chemistry', 'Biochemistry', 'Spectroscopy',
+        'Organic synthesis', 'Catalysis', 'Environmental chemistry'
+      ]
+    },
+    // BIOLOGY - Specific topics by level
+    biology: {
+      basico: [
+        'Living things', 'Plants and animals', 'The human body',
+        'Food and nutrition', 'The senses', 'Ecosystems'
+      ],
+      medio: [
+        'The cell', 'Cell structure', 'Cell organelles',
+        'Cell membrane', 'Cell division', 'Mitosis and meiosis',
+        'Mendelian genetics', 'DNA and RNA', 'Protein synthesis',
+        'Mutations', 'Heredity and chromosomes', 'Biological evolution',
+        'Natural selection', 'Origin of species', 'Classification of living things',
+        'Ecology', 'Energy flow', 'Biogeochemical cycles',
+        'Biodiversity', 'Human anatomy', 'Human body systems',
+        'Nervous system', 'Endocrine system', 'Immune system',
+        'Human reproduction', 'Microbiology', 'Viruses and bacteria'
+      ],
+      superior: [
+        'Molecular biology', 'Molecular genetics', 'Biotechnology',
+        'Genetic engineering', 'Bioinformatics', 'Neurobiology',
+        'Advanced immunology', 'Advanced microbiology', 'Advanced ecology'
       ]
     },
     history: {
@@ -399,10 +544,142 @@ function getSpecificTopics(courseName: string, subjectName: string, language: 'e
     ]
   };
   
+  // Temas específicos por curso para FÍSICA (Enseñanza Media)
+  const physicsTopicsEs: Record<string, string[]> = {
+    '1ro medio': [
+      'Cinemática: posición, desplazamiento y trayectoria', 'Velocidad y rapidez',
+      'Movimiento rectilíneo uniforme (MRU)', 'Aceleración', 'Movimiento rectilíneo uniformemente acelerado (MRUA)',
+      'Caída libre y lanzamiento vertical', 'Gráficos de movimiento', 'Vectores y escalares',
+      'Fuerza y leyes de Newton', 'Primera ley de Newton (inercia)', 'Segunda ley de Newton',
+      'Tercera ley de Newton (acción y reacción)', 'Fuerza de rozamiento', 'Fuerza peso y normal',
+      'Diagrama de cuerpo libre', 'Trabajo mecánico', 'Potencia mecánica', 'Energía cinética',
+      'Energía potencial gravitatoria', 'Conservación de la energía mecánica'
+    ],
+    '2do medio': [
+      'Momentum o cantidad de movimiento', 'Impulso', 'Conservación del momentum',
+      'Colisiones elásticas e inelásticas', 'Movimiento circular uniforme', 'Velocidad angular',
+      'Aceleración centrípeta', 'Fuerza centrípeta', 'Torque y momento de fuerza',
+      'Equilibrio rotacional', 'Gravitación universal', 'Ley de gravitación de Newton',
+      'Movimiento de satélites', 'Leyes de Kepler', 'Hidrostática', 'Presión',
+      'Presión atmosférica', 'Principio de Pascal', 'Principio de Arquímedes', 'Fluidos en movimiento'
+    ],
+    '3ro medio': [
+      'Ondas mecánicas', 'Características de las ondas', 'Ondas transversales y longitudinales',
+      'Longitud de onda, frecuencia y amplitud', 'Velocidad de propagación', 'Reflexión de ondas',
+      'Refracción de ondas', 'Difracción', 'Interferencia de ondas', 'Ondas estacionarias',
+      'Ondas sonoras', 'Velocidad del sonido', 'Intensidad del sonido', 'Efecto Doppler',
+      'Luz y espectro electromagnético', 'Reflexión de la luz', 'Refracción de la luz',
+      'Lentes convergentes y divergentes', 'Espejos planos y curvos', 'Óptica del ojo humano'
+    ],
+    '4to medio': [
+      'Electricidad estática', 'Carga eléctrica', 'Ley de Coulomb', 'Campo eléctrico',
+      'Potencial eléctrico', 'Corriente eléctrica', 'Ley de Ohm', 'Resistencia eléctrica',
+      'Circuitos eléctricos', 'Circuitos en serie y paralelo', 'Potencia eléctrica',
+      'Magnetismo', 'Campo magnético', 'Fuerza magnética sobre cargas', 'Inducción electromagnética',
+      'Ley de Faraday', 'Transformadores', 'Termodinámica', 'Temperatura y calor',
+      'Transferencia de calor', 'Primera ley de la termodinámica', 'Segunda ley de la termodinámica',
+      'Física moderna introductoria', 'Efecto fotoeléctrico', 'Dualidad onda-partícula'
+    ]
+  };
+  
+  // Temas específicos por curso para QUÍMICA (Enseñanza Media)
+  const chemistryTopicsEs: Record<string, string[]> = {
+    '1ro medio': [
+      'Teoría atómica', 'Modelos atómicos históricos', 'Modelo atómico actual',
+      'Estructura del átomo', 'Número atómico y masa atómica', 'Isótopos',
+      'Configuración electrónica', 'Niveles y subniveles de energía', 'Tabla periódica',
+      'Grupos y períodos', 'Propiedades periódicas', 'Radio atómico',
+      'Energía de ionización', 'Electronegatividad', 'Metales, no metales y metaloides',
+      'Enlace químico', 'Enlace iónico', 'Enlace covalente', 'Enlace metálico',
+      'Estructura de Lewis', 'Polaridad de moléculas'
+    ],
+    '2do medio': [
+      'Nomenclatura química inorgánica', 'Óxidos', 'Hidróxidos', 'Ácidos', 'Sales',
+      'Reacciones químicas', 'Tipos de reacciones químicas', 'Balanceo de ecuaciones',
+      'Estequiometría', 'Mol y número de Avogadro', 'Masa molar', 'Cálculos estequiométricos',
+      'Reactivo limitante', 'Rendimiento de reacciones', 'Soluciones químicas',
+      'Concentración de soluciones', 'Molaridad', 'Diluciones', 'Propiedades coligativas',
+      'Gases ideales', 'Ley de los gases ideales', 'Presión parcial'
+    ],
+    '3ro medio': [
+      'Termoquímica', 'Entalpía', 'Reacciones exotérmicas y endotérmicas',
+      'Energía de enlace', 'Ley de Hess', 'Cinética química', 'Velocidad de reacción',
+      'Factores que afectan la velocidad', 'Catalizadores', 'Equilibrio químico',
+      'Constante de equilibrio', 'Principio de Le Chatelier', 'Ácidos y bases',
+      'Teoría de Arrhenius', 'Teoría de Brønsted-Lowry', 'pH y pOH',
+      'Indicadores ácido-base', 'Neutralización', 'Titulación'
+    ],
+    '4to medio': [
+      'Química orgánica', 'El átomo de carbono', 'Hibridación del carbono',
+      'Hidrocarburos', 'Alcanos', 'Alquenos', 'Alquinos', 'Hidrocarburos cíclicos',
+      'Hidrocarburos aromáticos', 'Isomería', 'Grupos funcionales',
+      'Alcoholes', 'Éteres', 'Aldehídos', 'Cetonas', 'Ácidos carboxílicos',
+      'Ésteres', 'Aminas', 'Amidas', 'Polímeros', 'Polímeros naturales y sintéticos',
+      'Electroquímica', 'Reacciones redox', 'Pilas y baterías', 'Electrólisis'
+    ]
+  };
+  
+  // Temas específicos por curso para BIOLOGÍA (Enseñanza Media)
+  const biologyTopicsEs: Record<string, string[]> = {
+    '1ro medio': [
+      'La célula como unidad de vida', 'Teoría celular', 'Célula procarionte y eucarionte',
+      'Organelos celulares', 'Membrana plasmática', 'Transporte celular',
+      'Difusión y ósmosis', 'Núcleo celular', 'ADN y cromosomas', 'Ciclo celular',
+      'Mitosis', 'Meiosis', 'Diferencias entre mitosis y meiosis', 'Reproducción celular',
+      'Metabolismo celular', 'Respiración celular', 'Fotosíntesis', 'ATP y energía celular',
+      'Enzimas', 'Fermentación'
+    ],
+    '2do medio': [
+      'Genética mendeliana', 'Leyes de Mendel', 'Herencia dominante y recesiva',
+      'Cuadro de Punnett', 'Herencia ligada al sexo', 'Cromosomas sexuales',
+      'Mutaciones genéticas', 'Estructura del ADN', 'Replicación del ADN',
+      'Transcripción', 'Traducción', 'Síntesis de proteínas', 'Código genético',
+      'Ingeniería genética', 'Biotecnología', 'Organismos transgénicos',
+      'Clonación', 'Bioética', 'Genoma humano', 'Terapia génica'
+    ],
+    '3ro medio': [
+      'Sistema nervioso', 'Neurona y sinapsis', 'Sistema nervioso central',
+      'Sistema nervioso periférico', 'Sistema nervioso autónomo', 'Receptores sensoriales',
+      'Sistema endocrino', 'Hormonas', 'Glándulas endocrinas', 'Homeostasis',
+      'Regulación hormonal', 'Sistema inmunológico', 'Inmunidad innata',
+      'Inmunidad adquirida', 'Anticuerpos', 'Vacunas', 'Enfermedades autoinmunes',
+      'VIH y SIDA', 'Respuesta inflamatoria', 'Alergias'
+    ],
+    '4to medio': [
+      'Evolución biológica', 'Teoría de Darwin', 'Selección natural',
+      'Evidencias de la evolución', 'Especiación', 'Origen de la vida',
+      'Historia de la vida en la Tierra', 'Eras geológicas', 'Evolución humana',
+      'Ecología', 'Ecosistemas', 'Cadenas y redes tróficas', 'Flujo de energía',
+      'Ciclos biogeoquímicos', 'Ciclo del carbono', 'Ciclo del nitrógeno',
+      'Dinámica de poblaciones', 'Relaciones interespecíficas', 'Biodiversidad',
+      'Conservación ambiental', 'Cambio climático', 'Desarrollo sustentable'
+    ]
+  };
+  
   // Función auxiliar para normalizar nombre de curso
   const normalizeCourseName = (course: string): string => {
     const normalized = normalize(course);
-    // Mapear variantes de nombres de cursos
+    
+    // Primero detectar si es enseñanza media
+    const isMedio = normalized.includes('medio');
+    
+    // Mapear variantes de nombres de cursos para ENSEÑANZA MEDIA
+    if (isMedio) {
+      if (normalized.includes('4to') || normalized.includes('4°') || normalized.includes('cuarto')) {
+        return '4to medio';
+      }
+      if (normalized.includes('3ro') || normalized.includes('3°') || normalized.includes('tercero')) {
+        return '3ro medio';
+      }
+      if (normalized.includes('2do') || normalized.includes('2°') || normalized.includes('segundo')) {
+        return '2do medio';
+      }
+      if (normalized.includes('1ro') || normalized.includes('1°') || normalized.includes('primero')) {
+        return '1ro medio';
+      }
+    }
+    
+    // Mapear variantes de nombres de cursos para ENSEÑANZA BÁSICA
     if (normalized.includes('8vo') || normalized.includes('8°') || normalized.includes('octavo')) {
       return '8vo basico';
     }
@@ -436,11 +713,39 @@ function getSpecificTopics(courseName: string, subjectName: string, language: 'e
   
   // IMPORTANTE: El orden de detección importa!
   // Historia DEBE ir ANTES de Ciencias porque "Historia, Geografía y Ciencias Sociales" contiene "ciencia"
+  // Física, Química y Biología DEBEN ir ANTES de Ciencias Naturales genérico
   
   // Buscar temas específicos para Historia (detectar primero por "historia" o "social")
   if (subject.includes('historia') || subject.includes('social') || subject.includes('geografia')) {
     console.log('[getSpecificTopics] Detected as HISTORY');
     const topics = historyTopicsEs[normalizedCourse];
+    if (topics) {
+      return language === 'es' ? topics : topics;
+    }
+  }
+  
+  // FÍSICA - Detectar específicamente antes de ciencias genéricas
+  if (subject.includes('fisica') || subject.includes('physics')) {
+    console.log('[getSpecificTopics] Detected as PHYSICS');
+    const topics = physicsTopicsEs[normalizedCourse];
+    if (topics) {
+      return language === 'es' ? topics : topics;
+    }
+  }
+  
+  // QUÍMICA - Detectar específicamente antes de ciencias genéricas
+  if (subject.includes('quimica') || subject.includes('chemistry')) {
+    console.log('[getSpecificTopics] Detected as CHEMISTRY');
+    const topics = chemistryTopicsEs[normalizedCourse];
+    if (topics) {
+      return language === 'es' ? topics : topics;
+    }
+  }
+  
+  // BIOLOGÍA - Detectar específicamente antes de ciencias genéricas
+  if (subject.includes('biologia') || subject.includes('biology')) {
+    console.log('[getSpecificTopics] Detected as BIOLOGY');
+    const topics = biologyTopicsEs[normalizedCourse];
     if (topics) {
       return language === 'es' ? topics : topics;
     }
