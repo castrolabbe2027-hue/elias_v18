@@ -1408,6 +1408,33 @@ function GradesOverTimeChart({ monthlyPctByKey, semester, comparisonType, displa
     const hasAnyGradesData = seriesData.some(s => s.data.some(v => v !== null));
     const hasVisibleGradesData = seriesToRender.some(s => s.data.some(v => v !== null));
 
+    // Calcular yDomain y yTicks para zoom - ajustar eje Y a los datos reales (rango ajustado)
+    const { gradesYDomain, gradesYTicks } = (() => {
+      if (!zoomYValue) return { gradesYDomain: undefined, gradesYTicks: undefined }; // Sin zoom, usar 0-100
+      const allValues = seriesToRender.flatMap(s => s.data.filter((v): v is number => v !== null));
+      if (allValues.length === 0) return { gradesYDomain: undefined, gradesYTicks: undefined };
+      const minVal = Math.min(...allValues);
+      const maxVal = Math.max(...allValues);
+      const range = maxVal - minVal;
+      // Padding mínimo (2-3% del rango) para ver mejor las variaciones
+      const padding = Math.max(1, range * 0.05) || 2;
+      // Redondear a múltiplos de 1 para rango más ajustado
+      const domainMin = Math.max(0, Math.floor(minVal - padding));
+      const domainMax = Math.min(100, Math.ceil(maxVal + padding));
+      // Generar ticks más finos (cada 2-5%)
+      const ticks: number[] = [];
+      const tickRange = domainMax - domainMin;
+      const step = tickRange <= 10 ? 2 : tickRange <= 20 ? 5 : 10;
+      for (let t = domainMin; t <= domainMax; t += step) {
+        ticks.push(t);
+      }
+      if (ticks[ticks.length - 1] !== domainMax) ticks.push(domainMax);
+      return {
+        gradesYDomain: { min: domainMin, max: domainMax },
+        gradesYTicks: ticks
+      };
+    })();
+
     return (
       <div className="space-y-5">
         <div className="relative">
@@ -1421,7 +1448,9 @@ function GradesOverTimeChart({ monthlyPctByKey, semester, comparisonType, displa
                     series={seriesToRender}
                     labels={labels}
                     height={288}
-                    percentGrid
+                    percentGrid={!zoomYValue}
+                    yDomain={gradesYDomain}
+                    yTicks={gradesYTicks}
                     yAxis
                     highlightLastValue
                   />
@@ -4922,7 +4951,7 @@ function CourseComparisonChart({
   // 🔧 CORREGIDO: Usar azul más oscuro (#3B82F6) en lugar de azul claro (#60A5FA)
   const colors = ['#3B82F6', '#F59E0B', '#10B981', '#F97316', '#8B5CF6', '#EC4899'];
 
-  // Cálculo de dominio Y dinámico para zoom
+  // Cálculo de dominio Y dinámico para zoom (rango ajustado para ver mejor variaciones)
   const yDomain = useMemo(() => {
     if (!(zoomY ?? true)) return { min: 0, max: 100 };
     
@@ -4938,34 +4967,18 @@ function CourseComparisonChart({
     let max = Math.max(...visibleSeriesData);
     const range = max - min;
     
-    // ZOOM INTELIGENTE: Centrar en el rango de datos con padding apropiado
+    // ZOOM AJUSTADO: Padding mínimo para ver mejor las variaciones
+    const padding = Math.max(1, range * 0.05) || 2; // Solo 5% del rango o 1-2%
     
-    // Calcular padding basado en el rango de datos
-    const padding = Math.max(5, range * 0.15); // Mínimo 5%, o 15% del rango
-    
-    // Aplicar padding
+    // Aplicar padding mínimo
     min = Math.max(0, min - padding);
     max = Math.min(100, max + padding);
     
-    // Asegurar ventana mínima de 10% para poder ver diferencias
-    if (max - min < 10) {
+    // Asegurar ventana mínima de 5% para casos extremos
+    if (max - min < 5) {
       const center = (min + max) / 2;
-      min = Math.max(0, center - 5);
-      max = Math.min(100, center + 5);
-    }
-    
-    // Si los valores están en la parte alta (>70%), dar más espacio arriba
-    if (min > 70) {
-      max = Math.min(100, max + 5);
-    }
-    
-    // Si los valores están en la parte baja (<30%), dar más espacio abajo
-    if (max < 30) {
-      min = Math.max(0, min - 5);
-    }
-    
-    // DEBUG: Log del zoom para verificar
-    if (typeof window !== 'undefined' && (zoomY ?? true)) {
+      min = Math.max(0, center - 2.5);
+      max = Math.min(100, center + 2.5);
     }
     
     if (min >= max) return { min: 0, max: 100 };
@@ -5254,15 +5267,30 @@ function CourseComparisonChart({
                     console.log('📈 [RENDER] seriesToRender:', seriesToRender.map(s => ({ label: s.label, data: s.data })));
                   }
                   
+                  // Calcular yTicks para zoom - generar ticks dinámicos basados en yDomain
+                  const comparisonYTicks = (() => {
+                    if (!zoomY) return undefined;
+                    const domainMin = Math.floor(yDomain.min / 5) * 5;
+                    const domainMax = Math.ceil(yDomain.max / 5) * 5;
+                    const ticks: number[] = [];
+                    const step = Math.max(5, Math.round((domainMax - domainMin) / 5 / 5) * 5);
+                    for (let t = domainMin; t <= domainMax; t += step) {
+                      ticks.push(t);
+                    }
+                    if (ticks[ticks.length - 1] !== domainMax) ticks.push(domainMax);
+                    return ticks;
+                  })();
+                  
                   return (
                     <MultiTrendChart
                       series={seriesToRender}
                       labels={monthlyData.labels}
                       height={288}
-                      percentGrid
+                      percentGrid={!zoomY}
                       yAxis
                       highlightLastValue
                       yDomain={zoomY ? yDomain : undefined}
+                      yTicks={comparisonYTicks}
                     />
                   );
                 })()
