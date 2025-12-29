@@ -525,9 +525,13 @@ function GradesOverTimeChart({ monthlyPctByKey, semester, comparisonType, displa
     }
     
     // Para calificaciones: cuando el zoom está activado y no hay semestre, mostrar últimos ~90 días
+    // PERO para años anteriores, siempre mostrar hasta diciembre completo
     if (zoomYValue && !semester) {
-      // Tomamos el mes de "hoy" y proyectamos 3 meses al año seleccionado (últimos ~90 días)
-      // Cierre: mes anterior al actual. Manejar borde de año para que en ene/feb se use Oct–Dic del año seleccionado.
+      // Para años anteriores, mostrar el último trimestre completo (Oct-Dic)
+      if (year < currentYear) {
+        return { start: 9, end: 11 }; // Oct, Nov, Dic
+      }
+      // Para el año actual: últimos 3 meses
       const todayMonth = new Date().getMonth(); // 0-11
       let end = (todayMonth - 1 + 12) % 12; // mes anterior a hoy, con wrap
       let start: number;
@@ -788,7 +792,7 @@ function GradesOverTimeChart({ monthlyPctByKey, semester, comparisonType, displa
     const { start: visibleStart, end: visibleEnd } = getCalendarMonthRange();
     const currentMonthIdx = new Date().getMonth();
     return { visibleStart, visibleEnd, currentMonthIdx };
-  }, [comparisonType, zoomYValue, semester, language]); // Agregar zoomYValue como dependencia
+  }, [comparisonType, zoomYValue, semester, language, year]); // Incluir year para recalcular rango al cambiar año
   
   // Para asistencia: respetar visibleEnd calculado (Mar..Dic o 3m), sin acotar por mes actual
   const actualVisibleEnd = (comparisonType === 'asistencia')
