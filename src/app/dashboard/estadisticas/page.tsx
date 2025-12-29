@@ -12194,6 +12194,7 @@ Formato: Una línea por insight. Si hay datos completos: máximo 6 insights. Si 
         {showQuickInsights && chartsLoadPhase < 3 && <InsightsSkeleton />}
 
         {/* Comparación de Cursos (líneas) - con Suspense para carga diferida */}
+        {/* 🔧 CORREGIDO: Usar periodYear cuando comparisonType='asistencia' para sincronizar con gráfico Asistencia-Periodo */}
         {showComparisonChart && chartsLoadPhase >= 4 && (
           <Suspense fallback={<CourseComparisonSkeleton />}>
             <CourseComparisonChart 
@@ -12207,7 +12208,7 @@ Formato: Una línea por insight. Si hay datos completos: máximo 6 insights. Si 
                 semester: debouncedSemester !== 'all' ? debouncedSemester as Exclude<Semester, 'all'> : undefined,
               }}
               period={period}
-              year={selectedYear}
+              year={comparisonType === 'asistencia' ? periodYear : selectedYear}
               comparisonType={comparisonType}
               setComparisonType={setComparisonType}
               sqlGrades={sqlGradesByYear}
