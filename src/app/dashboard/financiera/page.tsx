@@ -234,18 +234,15 @@ export default function FinancieraPage() {
     
     const year = 2025; // Solo año 2025
     const storageKey = `smart-student-payments-${year}`;
-    const isAdmin = user?.role === 'admin';
     let existingRecords: PaymentRecord[] = [];
     
-    // Solo cargar desde localStorage para apoderados (no para admin)
-    if (!isAdmin) {
-      try {
-        const stored = localStorage.getItem(storageKey);
-        if (stored) {
-          existingRecords = JSON.parse(stored);
-        }
-      } catch {}
-    }
+    // Cargar desde localStorage para TODOS los roles
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        existingRecords = JSON.parse(stored);
+      }
+    } catch {}
     
     // Generar registros para todos los estudiantes asignados
     const allRecords: PaymentRecord[] = [];
@@ -286,16 +283,14 @@ export default function FinancieraPage() {
       allRecords.push(...studentRecords);
     }
     
-    // Solo guardar en localStorage para apoderados (evitar exceder cuota con muchos estudiantes)
-    if (!isAdmin) {
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(allRecords));
-      } catch (e) {
-        console.warn('No se pudo guardar en localStorage (cuota excedida):', e);
-      }
+    // Guardar en localStorage para TODOS los roles
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(allRecords));
+    } catch (e) {
+      console.warn('No se pudo guardar en localStorage (cuota excedida):', e);
     }
     setAllPaymentRecords(allRecords);
-  }, [assignedStudents, user?.role]);
+  }, [assignedStudents]);
 
   // Filtrar registros según selección
   useEffect(() => {
