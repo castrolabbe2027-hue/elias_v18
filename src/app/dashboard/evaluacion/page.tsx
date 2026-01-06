@@ -822,44 +822,71 @@ export default function EvaluacionPage() {
                   
                   // 📧 NUEVO: Enviar email al apoderado cuando el estudiante termina la evaluación
                   try {
-                    const storedUsers = localStorage.getItem('smart-student-users');
-                    if (storedUsers && user) {
-                      const allUsers = JSON.parse(storedUsers);
-                      const studentUser = allUsers.find((u: any) => u.id === (user as any).id || u.username === user.username);
-                      
-                      // Buscar apoderados del estudiante
-                      const guardianIds = allUsers
-                        .filter((u: any) => 
-                          u.role === 'guardian' && 
-                          (u.assignedStudents?.includes((user as any).id) || 
-                           u.assignedStudents?.includes(user.username) ||
-                           u.studentIds?.includes((user as any).id) ||
-                           u.studentIds?.includes(user.username))
-                        )
-                        .map((u: any) => u.id);
-                      
-                      if (guardianIds.length > 0) {
-                        console.log(`📧 [EVALUACIÓN] Enviando email a ${guardianIds.length} apoderado(s)`);
-                        sendEmailOnNotification(
-                          'evaluation_completed',
-                          guardianIds,
-                          {
-                            title: `${studentDisplayName} ha completado una evaluación`,
-                            content: `${studentDisplayName} ha completado la evaluación "${currentTask.title || evaluationTitle}" con un resultado de ${finalScore}/${totalQuestions} (${Math.round(percentage)}%)`,
-                            taskTitle: currentTask.title || evaluationTitle,
-                            senderName: 'Smart Student',
-                            courseName: selectedCourse,
-                            grade: finalScore,
-                            feedback: `Porcentaje: ${Math.round(percentage)}%`
-                          }
-                        ).then(() => {
-                          console.log(`📧 [EVALUACIÓN] Email enviado a apoderados exitosamente`);
-                        }).catch((emailError) => {
-                          console.warn('⚠️ [EVALUACIÓN] Error enviando email a apoderados:', emailError);
-                        });
-                      } else {
-                        console.log('📧 [EVALUACIÓN] No se encontraron apoderados para el estudiante');
+                    const currentYear = new Date().getFullYear();
+                    const studentId = (user as any).id || user.username;
+                    let guardianIds: string[] = [];
+                    
+                    // Método 1: Buscar en smart-student-guardians-{year}
+                    const guardiansForYear = JSON.parse(localStorage.getItem(`smart-student-guardians-${currentYear}`) || '[]');
+                    if (guardiansForYear.length > 0) {
+                      guardianIds = guardiansForYear
+                        .filter((g: any) => g.studentIds?.includes(studentId))
+                        .map((g: any) => g.id);
+                      console.log(`📧 [EVALUACIÓN] Apoderados por guardians-year: ${guardianIds.length}`);
+                    }
+                    
+                    // Método 2: Buscar en smart-student-guardian-students (relaciones)
+                    if (guardianIds.length === 0) {
+                      const guardianRelations = JSON.parse(localStorage.getItem('smart-student-guardian-students') || '[]');
+                      if (guardianRelations.length > 0) {
+                        const guardianIdsFromRelations = guardianRelations
+                          .filter((r: any) => r.studentId === studentId)
+                          .map((r: any) => r.guardianId);
+                        guardianIds = [...new Set(guardianIdsFromRelations)];
+                        console.log(`📧 [EVALUACIÓN] Apoderados por relaciones: ${guardianIds.length}`);
                       }
+                    }
+                    
+                    // Método 3: Buscar en smart-student-users
+                    if (guardianIds.length === 0) {
+                      const storedUsers = localStorage.getItem('smart-student-users');
+                      if (storedUsers) {
+                        const allUsers = JSON.parse(storedUsers);
+                        guardianIds = allUsers
+                          .filter((u: any) => 
+                            u.role === 'guardian' && 
+                            (u.assignedStudents?.includes(studentId) || 
+                             u.assignedStudents?.includes(user.username) ||
+                             u.studentIds?.includes(studentId) ||
+                             u.studentIds?.includes(user.username) ||
+                             u.children?.includes(studentId))
+                          )
+                          .map((u: any) => u.id);
+                        console.log(`📧 [EVALUACIÓN] Apoderados por users: ${guardianIds.length}`);
+                      }
+                    }
+                    
+                    if (guardianIds.length > 0) {
+                      console.log(`📧 [EVALUACIÓN] Enviando email a ${guardianIds.length} apoderado(s)`);
+                      sendEmailOnNotification(
+                        'evaluation_completed',
+                        guardianIds,
+                        {
+                          title: `${studentDisplayName} ha completado una evaluación`,
+                          content: `${studentDisplayName} ha completado la evaluación "${currentTask.title || evaluationTitle}" con un resultado de ${finalScore}/${totalQuestions} (${Math.round(percentage)}%)`,
+                          taskTitle: currentTask.title || evaluationTitle,
+                          senderName: 'Smart Student',
+                          courseName: selectedCourse,
+                          grade: finalScore,
+                          feedback: `Porcentaje: ${Math.round(percentage)}%`
+                        }
+                      ).then(() => {
+                        console.log(`📧 [EVALUACIÓN] Email enviado a apoderados exitosamente`);
+                      }).catch((emailError) => {
+                        console.warn('⚠️ [EVALUACIÓN] Error enviando email a apoderados:', emailError);
+                      });
+                    } else {
+                      console.log('📧 [EVALUACIÓN] No se encontraron apoderados para el estudiante');
                     }
                   } catch (emailError) {
                     console.warn('⚠️ [EVALUACIÓN] Error en envío de email a apoderados:', emailError);
