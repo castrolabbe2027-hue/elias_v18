@@ -90,6 +90,7 @@ class EmailNotificationService {
    */
   getUserEmailInfo(userId: string): { email: string; name: string } | null {
     try {
+      // MÉTODO 1: Buscar en smart-student-users
       const storedUsers = localStorage.getItem('smart-student-users');
       if (storedUsers) {
         const users = JSON.parse(storedUsers);
@@ -106,11 +107,48 @@ class EmailNotificationService {
             console.warn(`⚠️ [EMAIL SERVICE] Usuario ${userId} no tiene email configurado`);
           }
         } else {
-          console.warn(`⚠️ [EMAIL SERVICE] Usuario ${userId} NO encontrado`);
+          console.warn(`⚠️ [EMAIL SERVICE] Usuario ${userId} NO encontrado en users`);
         }
-      } else {
-        console.warn(`⚠️ [EMAIL SERVICE] No hay usuarios en localStorage`);
       }
+      
+      // MÉTODO 2: Buscar en smart-student-students-{year}
+      const currentYear = new Date().getFullYear();
+      const storedStudents = localStorage.getItem(`smart-student-students-${currentYear}`);
+      if (storedStudents) {
+        const students = JSON.parse(storedStudents);
+        console.log(`📧 [EMAIL SERVICE] Buscando en students-${currentYear}: ${students.length} estudiantes`);
+        const student = students.find((s: any) => s.id === userId || s.username === userId);
+        if (student) {
+          console.log(`📧 [EMAIL SERVICE] Estudiante encontrado: ${student.displayName || student.name}, email: ${student.email || 'SIN EMAIL'}`);
+          if (student.email) {
+            return {
+              email: student.email,
+              name: student.displayName || student.name || student.username || 'Estudiante'
+            };
+          } else {
+            console.warn(`⚠️ [EMAIL SERVICE] Estudiante ${userId} no tiene email configurado`);
+          }
+        }
+      }
+      
+      // MÉTODO 3: Buscar en smart-student-guardians-{year}
+      const storedGuardians = localStorage.getItem(`smart-student-guardians-${currentYear}`);
+      if (storedGuardians) {
+        const guardians = JSON.parse(storedGuardians);
+        console.log(`📧 [EMAIL SERVICE] Buscando en guardians-${currentYear}: ${guardians.length} apoderados`);
+        const guardian = guardians.find((g: any) => g.id === userId || g.username === userId);
+        if (guardian) {
+          console.log(`📧 [EMAIL SERVICE] Apoderado encontrado: ${guardian.displayName || guardian.name}, email: ${guardian.email || 'SIN EMAIL'}`);
+          if (guardian.email) {
+            return {
+              email: guardian.email,
+              name: guardian.displayName || guardian.name || guardian.username || 'Apoderado'
+            };
+          }
+        }
+      }
+      
+      console.warn(`⚠️ [EMAIL SERVICE] Usuario ${userId} no encontrado en ninguna colección`);
     } catch (error) {
       console.warn('⚠️ [EMAIL SERVICE] Error getting user email info:', error);
     }
