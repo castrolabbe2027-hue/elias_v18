@@ -69,51 +69,51 @@ PREGUNTAS ESPERADAS: ${qCount || 'Se detectará automáticamente'}
 
 ## TAREA PRINCIPAL:
 Analiza VISUALMENTE cada página para detectar TODAS las preguntas visibles.
-⚠️ CRÍTICO: NO OMITAS NINGUNA PREGUNTA. Si hay 5 preguntas con marca, reporta las 5.
-Si hay ${qCount > 0 ? qCount : 16} preguntas en el examen, debes reportar ${qCount > 0 ? qCount : 16} respuestas.
+⚠️ CRÍTICO: DEBES REPORTAR CADA PREGUNTA INDIVIDUALMENTE, del 1 al ${qCount > 0 ? qCount : 'último número visible'}.
+NO AGRUPES, NO OMITAS, NO SALTES ninguna pregunta.
 
-## 📋 PROTOCOLO DE DETECCIÓN:
+## 📋 PROTOCOLO DE DETECCIÓN SECUENCIAL:
 
-### 1. BUSCAR MARCAS (X, ✓, círculo):
-- Busca una X, check o círculo DENTRO del paréntesis de V o F
-- Si ves "V (X)" → detected = "V"
-- Si ves "F (X)" → detected = "F"
-- Si AMBOS paréntesis están vacíos "V ( ) F ( )" → detected = null
+### PASO 1: ESCANEO VISUAL COMPLETO
+- Localiza TODAS las preguntas numeradas en el documento
+- Cuenta cuántas preguntas hay en total
+- Identifica la ubicación de cada una (arriba, medio, abajo de la página)
 
-### 2. NO OMITIR PREGUNTAS:
-- Revisa CADA pregunta del 1 al ${qCount > 0 ? qCount : 'último número visible'}
-- Si la pregunta 5 tiene "V (X)", DEBES reportarla como detected="V"
-- NUNCA omitas una pregunta porque "parece igual" a otras
-- Un paréntesis vacío ( ) es VACÍO, no una respuesta.
+### PASO 2: ANÁLISIS PREGUNTA POR PREGUNTA
+Para CADA pregunta del 1 al último número:
+a) Localiza los paréntesis de V ( ) y F ( )
+b) Mira DENTRO de cada paréntesis
+c) ¿Hay una X, check, círculo o relleno? → ESA es la respuesta
+d) ¿Ambos paréntesis están vacíos? → detected = null
 
-### 2. CLASIFICACIÓN DE MARCAS (debes identificar el tipo):
+### PASO 3: CLASIFICACIÓN DE MARCAS:
 - "STRONG_X": Una X clara y fuerte dentro del paréntesis → VÁLIDA
-- "CHECK": Un check/palomita ✓ visible → VÁLIDA
+- "CHECK": Un check/palomita ✓ visible → VÁLIDA  
 - "CIRCLE": Círculo alrededor de V o F → VÁLIDA
 - "FILL": Paréntesis rellenado/sombreado → VÁLIDA
-- "EMPTY": Espacio en blanco, sin tinta → detected = null (SIEMPRE)
+- "EMPTY": Espacio en blanco, sin tinta → detected = null
 - "WEAK_MARK": Garabato pequeño o dudoso → detected = null
-- "DIRTY": Manchas de escáner → detected = null
 
-### 3. REGLAS PARA V/F:
-- "V (X) F ( )" → detected = "V" (marca fuerte en V, F vacío)
-- "V ( ) F (X)" → detected = "F" (marca fuerte en F, V vacío)
-- "V ( ) F ( )" → detected = null (AMBOS VACÍOS = SIN RESPUESTA)
+### REGLAS PARA V/F:
+- "V (X) F ( )" → detected = "V"
+- "V ( ) F (X)" → detected = "F"  
+- "V ( ) F ( )" → detected = null (AMBOS VACÍOS)
 - "V (X) F (X)" → detected = null (DOBLE MARCA = INVALIDADO)
 
-### 4. REGLA DE ORO:
-- Es MEJOR reportar null (no respondió) que INVENTAR una respuesta
-- Si tienes DUDA → detected = null
-- Cada pregunta es INDEPENDIENTE de las demás
+### ⚠️ REGLA ANTI-OMISIÓN:
+- Si la prueba tiene ${qCount > 0 ? qCount : 'N'} preguntas, DEBES devolver ${qCount > 0 ? qCount : 'N'} entradas en "answers"
+- Si la pregunta 3 tiene "V (X)", DEBES incluirla: {"questionNum": 3, "detected": "V", ...}
+- NUNCA omitas una pregunta porque "parece similar" a otras
+- Cada pregunta es ÚNICA e INDEPENDIENTE
 
-### 5. DETECCIÓN DE ESTUDIANTE:
+### DETECCIÓN DE ESTUDIANTE:
 - Busca "Nombre:", "Estudiante:" en el encabezado
 - Busca "RUT:" seguido de números
 
-## FORMATO DE RESPUESTA (JSON PURO, SIN TEXTO ADICIONAL):
+## FORMATO DE RESPUESTA (JSON PURO):
 
 {
-  "questionsFoundInDocument": número_total_de_preguntas_en_el_examen,
+  "questionsFoundInDocument": número_total_de_preguntas_detectadas,
   "pages": [
     {
       "pageIndex": 0,
@@ -123,26 +123,25 @@ Si hay ${qCount > 0 ? qCount : 16} preguntas en el examen, debes reportar ${qCou
         "rut": "RUT o null"
       },
       "answers": [
-        {"questionNum": 1, "evidence": "STRONG_X en F", "detected": "F", "points": 5},
-        {"questionNum": 2, "evidence": "STRONG_X en V", "detected": "V", "points": 5},
-        {"questionNum": 3, "evidence": "STRONG_X en V", "detected": "V", "points": 5},
-        {"questionNum": 4, "evidence": "STRONG_X en V", "detected": "V", "points": 5},
-        {"questionNum": 5, "evidence": "EMPTY - ambos paréntesis vacíos", "detected": null, "points": null},
-        {"questionNum": 6, "evidence": "EMPTY - sin marca", "detected": null, "points": null},
-        {"questionNum": 7, "evidence": "STRONG_X en F", "detected": "F", "points": 5},
-        ...continúa hasta la última pregunta visible...
+        {"questionNum": 1, "evidence": "STRONG_X en paréntesis de F", "detected": "F", "points": 5},
+        {"questionNum": 2, "evidence": "STRONG_X en paréntesis de V", "detected": "V", "points": 5},
+        {"questionNum": 3, "evidence": "STRONG_X en paréntesis de V", "detected": "V", "points": 5},
+        {"questionNum": 4, "evidence": "STRONG_X en paréntesis de V", "detected": "V", "points": 5},
+        {"questionNum": 5, "evidence": "STRONG_X en paréntesis de F", "detected": "F", "points": 5},
+        {"questionNum": 6, "evidence": "EMPTY - paréntesis vacíos", "detected": null, "points": null}
       ]
     }
   ]
 }
 
-## ⚠️ REGLAS CRÍTICAS:
-1. Devuelve TODAS las preguntas visibles en el examen, NO solo las respondidas
-2. Las preguntas sin respuesta deben tener: "evidence": "EMPTY...", "detected": null
-3. Si escribes "EMPTY" en evidence, detected DEBE ser null
-- NO inventes respuestas para "completar" un patrón
-- Revisa VISUALMENTE cada pregunta de forma INDEPENDIENTE
-- Devuelve SOLO JSON válido, sin markdown ni explicaciones
+## ⚠️ CHECKLIST FINAL ANTES DE RESPONDER:
+1. ¿Incluí TODAS las preguntas del 1 al último número? ✓
+2. ¿Cada pregunta tiene su entrada en "answers"? ✓
+3. ¿Las preguntas con marca tienen detected = "V" o "F"? ✓
+4. ¿Las preguntas sin marca tienen detected = null? ✓
+5. ¿El JSON es válido, sin texto adicional? ✓
+
+Devuelve SOLO JSON válido, sin markdown ni explicaciones.
 `
 
     const parts: any[] = [{ text: prompt }]

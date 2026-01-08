@@ -48,70 +48,77 @@ export async function POST(request: NextRequest) {
       ? `\n\nMODO RE-CHEQUEO (FOCO): Analiza SOLO estas preguntas: ${focusNums.join(', ')}.\n- Ignora el resto del documento.\n- NO devuelvas preguntas fuera del foco.\n- Devuelve exactamente esas preguntas en "answers" (una entrada por cada número solicitado).\n`
       : '';
 
-    // 3. PROMPT CON "CHAIN OF THOUGHT" - Obliga a describir antes de clasificar
+    const totalQuestions = Array.isArray(questions) ? questions.length : 0;
+
+    // 3. PROMPT MEJORADO - ANTI-OMISIÓN
     const prompt = `
-ROL: Auditor Forense de Exámenes Escolares (Visión Artificial).
+ROL: Auditor Forense de Exámenes Escolares (Visión Artificial OMR).
 
 TAREA: Analizar la imagen y extraer TODAS las preguntas visibles.
-⚠️ CRÍTICO: NO OMITAS NINGUNA PREGUNTA. Si ves 5 preguntas con marca, reporta las 5.
+⚠️ CRÍTICO: DEBES REPORTAR CADA PREGUNTA DEL 1 AL ${totalQuestions > 0 ? totalQuestions : 'ÚLTIMO NÚMERO VISIBLE'}.
 
 ${focusLine}
 
 ${questionsContext}
 
-📋 PROTOCOLO DE DETECCIÓN:
+## 📋 PROTOCOLO DE DETECCIÓN SECUENCIAL:
 
-1. BUSCAR MARCAS EN CADA PREGUNTA:
-   - Revisa CADA pregunta del 1 al último número visible
-   - Si ves "V (X)" → val = "V"
-   - Si ves "F (X)" → val = "F"
-   - Si AMBOS están vacíos "V ( ) F ( )" → val = null
+### PASO 1: LOCALIZAR TODAS LAS PREGUNTAS
+- Escanea el documento de arriba a abajo
+- Identifica CADA pregunta numerada (1, 2, 3, 4, 5, ...)
+- Cuenta el total de preguntas
 
-2. NO OMITIR PREGUNTAS:
-   - Si la pregunta 5 tiene "V (X)", DEBES reportarla como val="V"
-   - NUNCA omitas una pregunta porque "parece similar" a otras
-   - Cada pregunta es INDEPENDIENTE
+### PASO 2: ANALIZAR CADA PREGUNTA INDIVIDUALMENTE
+Para CADA pregunta del 1 al último número:
+a) Localiza los paréntesis: V ( ) y F ( )
+b) Mira DENTRO de cada paréntesis
+c) ¿Hay una X, check o círculo? → ESA es la respuesta
+d) ¿Ambos vacíos? → val = null
 
-3. CLASIFICACIÓN DE MARCAS:
-   - "STRONG_X": Una X clara dentro del paréntesis → VÁLIDA
-   - "CHECK": Un check/palomita ✓ → VÁLIDA
-   - "CIRCLE": Círculo alrededor de V o F → VÁLIDA
-   - "EMPTY": Espacio en blanco → val = null
+### PASO 3: CLASIFICAR LA MARCA
+- "STRONG_X": X clara dentro del paréntesis → val = "V" o "F"
+- "CHECK": Check/palomita ✓ → val = "V" o "F"
+- "CIRCLE": Círculo alrededor → val = "V" o "F"
+- "EMPTY": Sin marca → val = null
 
-4. REGLA DE LA DUDA:
-   - Si NO ves una marca clara (STRONG_X, CHECK, CIRCLE, FILL) → val = null.
-   - Si ves "EMPTY" o "WEAK_MARK" → val = null.
-   - Es MEJOR reportar que el alumno no respondió que inventar un dato falso.
-   - Ante la duda → null. SIEMPRE null.
+### REGLAS V/F:
+- "V (X) F ( )" → val = "V"
+- "V ( ) F (X)" → val = "F"
+- "V ( ) F ( )" → val = null (SIN RESPUESTA)
 
-4. DETECCIÓN DE ESTUDIANTE:
-   - Busca "Nombre:", "Estudiante:" seguido de texto.
-   - Busca "RUT:" seguido de números.
+### ⚠️ REGLA ANTI-OMISIÓN (MUY IMPORTANTE):
+- Si hay ${totalQuestions > 0 ? totalQuestions : 'N'} preguntas, DEBES devolver ${totalQuestions > 0 ? totalQuestions : 'N'} entradas en "answers"
+- EJEMPLO: Si pregunta 3 tiene "V (X)", DEBES incluir: {"q": 3, "evidence": "STRONG_X en V", "val": "V"}
+- NUNCA omitas una pregunta aunque "parezca similar" a otras
+- Si no ves marca clara en una pregunta → val = null (pero INCLÚYELA)
 
-FORMATO DE SALIDA (JSON PURO, SIN TEXTO ADICIONAL):
+### DETECCIÓN DE ESTUDIANTE:
+- Busca "Nombre:", "Estudiante:" seguido de texto
+- Busca "RUT:" seguido de números
+
+## FORMATO DE SALIDA (JSON PURO):
 {
   "studentName": "Nombre detectado o null",
   "rut": "RUT detectado o null",
-  "questionsFound": número_total_de_preguntas_visibles,
+  "questionsFound": número_total_de_preguntas,
   "answers": [
     { "q": 1, "evidence": "STRONG_X en paréntesis de F", "val": "F" },
     { "q": 2, "evidence": "STRONG_X en paréntesis de V", "val": "V" },
     { "q": 3, "evidence": "STRONG_X en paréntesis de V", "val": "V" },
     { "q": 4, "evidence": "STRONG_X en paréntesis de F", "val": "F" },
-    { "q": 5, "evidence": "EMPTY - ambos paréntesis vacíos", "val": null },
-    { "q": 6, "evidence": "EMPTY - sin marca visible", "val": null },
-    { "q": 7, "evidence": "STRONG_X en paréntesis de V", "val": "V" },
-    ...continúa hasta la última pregunta visible...
+    { "q": 5, "evidence": "EMPTY - paréntesis vacíos", "val": null },
+    { "q": 6, "evidence": "STRONG_X en paréntesis de V", "val": "V" }
   ],
-  "confidence": "High" | "Low"
+  "confidence": "High"
 }
 
-⚠️ REGLAS CRÍTICAS:
-1. Devuelve TODAS las preguntas visibles, NO solo las respondidas.
-2. Las preguntas sin respuesta deben tener: "evidence": "EMPTY...", "val": null
-3. Si escribes "EMPTY" en evidence, val DEBE ser null.
-4. NO inventes respuestas para "completar" un patrón.
-5. Cada pregunta es INDEPENDIENTE de las demás.
+## ⚠️ CHECKLIST ANTES DE RESPONDER:
+1. ¿Incluí TODAS las preguntas del 1 al ${totalQuestions > 0 ? totalQuestions : 'último'}? ✓
+2. ¿Cada pregunta tiene su entrada en "answers"? ✓
+3. ¿Las preguntas con marca tienen val = "V" o "F"? ✓
+4. ¿Las preguntas sin marca tienen val = null? ✓
+
+Devuelve SOLO JSON válido.
 `;
 
     // 4. PREPARACIÓN MULTIMODAL
