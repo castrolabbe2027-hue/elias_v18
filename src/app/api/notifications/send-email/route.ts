@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import nodemailer from 'nodemailer';
 
 /**
  * API para enviar notificaciones por email
@@ -6,42 +7,66 @@ import { NextRequest, NextResponse } from 'next/server';
  * 
  * Correo de envío: notificaciones@smartstudent.online
  * 
- * NOTA: En producción, instalar nodemailer: npm install nodemailer @types/nodemailer
- * y descomentar la configuración SMTP
+ * Usando SMTP de Zoho Mail
  */
 
-// Configuración del transportador de email
-// En producción, usar variables de entorno para las credenciales
-const createTransporter = async (): Promise<any> => {
-  // Verificar si hay configuración SMTP disponible
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpPort = parseInt(process.env.SMTP_PORT || '587');
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
+// Configuración SMTP de Zoho
+const SMTP_HOST = process.env.SMTP_HOST || 'smtp.zoho.com';
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587');
+const SMTP_USER = process.env.SMTP_USER || 'notificaciones@smartstudent.online';
+const SMTP_PASS = process.env.SMTP_PASS || '';
+const FROM_EMAIL = process.env.SMTP_USER || 'notificaciones@smartstudent.online';
 
-  if (smtpHost && smtpUser && smtpPass) {
-    try {
-      // Importar nodemailer dinámicamente solo si está configurado SMTP
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const nodemailer = require('nodemailer');
-      return nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpPort === 465,
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-      });
-    } catch (err) {
-      console.warn('⚠️ [EMAIL API] nodemailer not installed, running in development mode');
-      return null;
-    }
+/**
+ * Crea el transportador de Nodemailer
+ */
+const createTransporter = () => {
+  return nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465,
+    auth: {
+      user: SMTP_USER,
+      pass: SMTP_PASS,
+    },
+  });
+};
+
+/**
+ * Envía un email usando SMTP
+ */
+const sendWithSMTP = async (emailData: {
+  from: string;
+  fromName: string;
+  to: string;
+  toName: string;
+  subject: string;
+  html: string;
+}): Promise<{ success: boolean; messageId?: string; error?: string }> => {
+  try {
+    console.log('📧 [SMTP] Sending to:', emailData.to);
+    
+    const transporter = createTransporter();
+    
+    const info = await transporter.sendMail({
+      from: `"${emailData.fromName}" <${emailData.from}>`,
+      to: `"${emailData.toName}" <${emailData.to}>`,
+      subject: emailData.subject,
+      html: emailData.html,
+    });
+
+    console.log('✅ [SMTP] Email sent successfully:', info.messageId);
+    return { 
+      success: true, 
+      messageId: info.messageId 
+    };
+  } catch (error) {
+    console.error('❌ [SMTP] Exception:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
   }
-
-  // Fallback: modo desarrollo (no envía emails reales, solo los logea)
-  console.log('⚠️ [EMAIL API] SMTP not configured, running in development mode');
-  return null;
 };
 
 interface EmailRequestBody {
@@ -76,14 +101,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('📧 [EMAIL API] Processing email request:', {
-      from: from || 'notificaciones@smartstudent.online',
+    const senderEmail = FROM_EMAIL;
+
+    console.log('📧 [SMTP] Processing email request:', {
+      from: senderEmail,
       to,
       subject,
       type
     });
-
-    const transporter = await createTransporter();
 
     // Generar HTML del email
     const htmlContent = generateEmailHtml({
@@ -98,46 +123,33 @@ export async function POST(request: NextRequest) {
       feedback: metadata?.feedback
     });
 
-    if (transporter) {
-      // Enviar email real
-      const info = await transporter.sendMail({
-        from: `"Smart Student" <${from || 'notificaciones@smartstudent.online'}>`,
-        to: `"${toName}" <${to}>`,
-        subject: subject,
-        html: htmlContent,
-      });
+    // Enviar con SMTP (Zoho)
+    const result = await sendWithSMTP({
+      from: senderEmail,
+      fromName: 'Smart Student',
+      to: to,
+      toName: toName || 'Usuario',
+      subject: subject,
+      html: htmlContent
+    });
 
-      console.log('✅ [EMAIL API] Email sent successfully:', info.messageId);
-
+    if (result.success) {
+      console.log('✅ [SMTP] Email sent successfully:', result.messageId);
       return NextResponse.json({
         success: true,
-        message: 'Email sent successfully',
-        messageId: info.messageId
+        message: 'Email sent successfully via SMTP',
+        messageId: result.messageId
       });
     } else {
-      // Modo desarrollo: simular envío
-      console.log('📧 [EMAIL API] Development mode - Email would be sent:');
-      console.log('  To:', to);
-      console.log('  Subject:', subject);
-      console.log('  Type:', type);
-      console.log('  Content preview:', content.substring(0, 100) + '...');
-
-      // Guardar en localStorage para debugging (solo en desarrollo)
-      // Esto permite ver los emails "enviados" en la consola del navegador
-
-      return NextResponse.json({
-        success: true,
-        message: 'Email logged (development mode)',
-        developmentMode: true,
-        emailData: {
-          to,
-          toName,
-          subject,
-          type,
-          title,
-          contentPreview: content.substring(0, 200)
-        }
-      });
+      console.error('❌ [SMTP] Failed to send email:', result.error);
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Failed to send email via SMTP', 
+          details: result.error
+        },
+        { status: 500 }
+      );
     }
 
   } catch (error) {

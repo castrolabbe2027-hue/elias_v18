@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '10mb', // Aumentar límite para imágenes grandes
-    },
-  },
-};
+// Configuración del Route Segment para App Router
+export const maxDuration = 60; // Máximo tiempo de ejecución en segundos
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
