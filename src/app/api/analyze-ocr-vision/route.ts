@@ -80,17 +80,69 @@ Formato típico: "V ( ) F ( )" o "Verdadero ( ) Falso ( )"
 - Si ves marca en F → detected = "F", questionType = "tf"
 
 ### TIPO 2: ALTERNATIVAS / OPCIÓN MÚLTIPLE (A, B, C, D)
-Formato típico: "a) ( ) b) ( ) c) ( ) d) ( )" o "A. B. C. D."
-- Si ves marca en A → detected = "A", questionType = "mc"
-- Si ves marca en B → detected = "B", questionType = "mc"
-- Si ves marca en C → detected = "C", questionType = "mc"
-- Si ves marca en D → detected = "D", questionType = "mc"
+FORMATOS COMUNES (todos válidos):
+- Formato 1: "a) ( ) b) ( ) c) ( ) d) ( )" con paréntesis después
+- Formato 2: "A. B. C. D." con punto después
+- Formato 3: "(A) (B) (C) (D)" con paréntesis ALREDEDOR de la letra ← COMÚN EN CHILE
+- Formato 4: "( ) A  ( ) B  ( ) C  ( ) D" con paréntesis antes
+
+🔴 MÉTODO OBLIGATORIO - CUENTA LAS LÍNEAS:
+1. Las opciones SIEMPRE van en orden: A es la PRIMERA línea, B es la SEGUNDA, C es la TERCERA, D es la CUARTA
+2. NO te confundas por el símbolo al inicio - mira el CONTENIDO de cada opción
+3. Busca la MARCA (X, ✓, círculo, relleno) - puede estar DENTRO del paréntesis
+4. Identifica en QUÉ LÍNEA (1ª, 2ª, 3ª, 4ª) está la marca
+5. Esa línea te dice la letra: 1ª=A, 2ª=B, 3ª=C, 4ª=D
+
+🔴 EJEMPLO CONCRETO:
+Si ves esto:
+  (A) Confiar en el primer resultado      ← Línea 1 = opción A
+  (⊗) Realizar la operación inversa       ← Línea 2 = opción B (TIENE LA X)
+  (C) No verificar                         ← Línea 3 = opción C  
+  (D) Preguntar a un compañero            ← Línea 4 = opción D
+→ La marca X está en la LÍNEA 2 → detected = "B"
+
+🔴 ERROR COMÚN A EVITAR:
+- NO reportes la letra que ves al lado de la marca
+- SÍ reporta según la POSICIÓN (línea 1,2,3,4 = A,B,C,D)
+
+Reglas de detección:
+- Primera opción con marca → detected = "A", questionType = "mc"
+- Segunda opción con marca → detected = "B", questionType = "mc"
+- Tercera opción con marca → detected = "C", questionType = "mc"
+- Cuarta opción con marca → detected = "D", questionType = "mc"
 - También puede haber E, F si hay más opciones
 
 ### TIPO 3: SELECCIÓN MÚLTIPLE (varias correctas)
-Formato típico: Igual que alternativas pero puede tener MÚLTIPLES marcas válidas
-- Si ves marcas en A y C → detected = "A,C", questionType = "ms"
-- Si ves marcas en B, C y D → detected = "B,C,D", questionType = "ms"
+⚠️ CRÍTICO: Revisa CADA opción individualmente para detectar TODAS las marcas.
+Formatos de marca válidos para checkboxes:
+- Checkbox relleno: ☑, ■, ▪, █, ✓ dentro de cuadro
+- X dentro de cuadro: ☒, [X], (X)
+- Cuadro con cualquier contenido visible vs cuadro vacío: □, ☐
+
+🔴 MÉTODO OBLIGATORIO PARA SELECCIÓN MÚLTIPLE:
+1. Examina CADA opción (A, B, C, D) una por una
+2. Para cada opción, verifica si el checkbox/cuadro tiene marca o está relleno
+3. Compara checkbox vacío (□) vs checkbox marcado (■, ☑, ☒)
+4. Reporta TODAS las letras que tienen marca, separadas por coma
+
+EJEMPLOS:
+- □ A) texto  □ B) texto  ■ C) texto  ■ D) texto → detected = "C,D", questionType = "ms"
+- ☐ (A)  ☐ (B)  ☑ (C)  ☑ (D) → detected = "C,D", questionType = "ms"  
+- Marcas en A y C → detected = "A,C", questionType = "ms"
+- Marcas en B, C y D → detected = "B,C,D", questionType = "ms"
+- Solo una marca en C → detected = "C", questionType = "ms"
+
+### TIPO 4: DESARROLLO / PROBLEMA (Respuesta escrita)
+Formato típico: Pregunta con espacio para escribir (líneas, cuadro, espacio en blanco)
+- El estudiante escribe texto manuscrito o impreso como respuesta
+- EXTRAE el texto completo de la respuesta del estudiante
+- questionType = "des"
+- detected = "[texto extraído de la respuesta]" (máximo 500 caracteres)
+- Si hay operaciones matemáticas, extrae los números y resultados
+- Si no hay respuesta escrita → detected = null
+- ⚠️ MUY IMPORTANTE: NO omitas las preguntas de desarrollo, siempre inclúyelas
+- evidence = "TEXTO manuscrito" o "TEXTO impreso" según corresponda
+- Ejemplo de respuesta: "El resultado es 42 pasajeros. 38-12+9=35, 35-8+15=42"
 
 ## 📋 PROTOCOLO DE DETECCIÓN SECUENCIAL:
 
@@ -109,15 +161,31 @@ c) ¿Hay marca en F? → detected = "F"
 d) ¿Ambos vacíos? → detected = null
 
 **Si es ALTERNATIVAS (A,B,C,D):**
-a) Localiza las opciones a) b) c) d) o A. B. C. D.
-b) ¿Cuál tiene la marca (X, círculo, check)? → detected = "A", "B", "C" o "D"
-c) ¿Ninguna marcada? → detected = null
-d) ¿Más de una marcada? → detected = null (invalidado) para opción múltiple simple
+⚠️ MUY IMPORTANTE:
+a) Localiza TODAS las opciones (pueden estar en formato A), a), (A), etc.)
+b) Para CADA opción, identifica la LETRA (A, B, C, D)
+c) Busca cuál tiene marca (X, círculo, check, relleno)
+d) REPORTA la LETRA de la opción marcada, NO la posición visual
+e) ¿Ninguna marcada? → detected = null
+f) ¿Más de una marcada? → detected = null (invalidado) para opción múltiple simple
 
 **Si es SELECCIÓN MÚLTIPLE:**
-a) Localiza todas las opciones
-b) ¿Cuáles tienen marca? → detected = "A,C" (separadas por coma, en orden alfabético)
-c) ¿Ninguna marcada? → detected = null
+⚠️ CRÍTICO - Examina CADA opción individualmente:
+a) Para la opción A: ¿tiene checkbox relleno/marcado? (■, ☑, ☒, X) → SÍ/NO
+b) Para la opción B: ¿tiene checkbox relleno/marcado? → SÍ/NO
+c) Para la opción C: ¿tiene checkbox relleno/marcado? → SÍ/NO
+d) Para la opción D: ¿tiene checkbox relleno/marcado? → SÍ/NO
+e) Reporta TODAS las letras con SÍ, separadas por coma, en orden alfabético
+f) Ejemplo: Si C=SÍ y D=SÍ → detected = "C,D"
+g) ¿Ninguna marcada? → detected = null
+
+**Si es DESARROLLO/PROBLEMA:**
+a) Busca el área de respuesta (líneas, cuadro, espacio bajo la pregunta)
+b) LEE TODO el texto manuscrito o impreso que el estudiante escribió
+c) Extrae números, operaciones matemáticas, pasos y conclusiones
+d) detected = texto completo de la respuesta (máx 500 chars)
+e) Si está vacío o ilegible → detected = null
+f) questionType = "des"
 
 ### PASO 3: CLASIFICACIÓN DE MARCAS:
 - "STRONG_X": Una X clara y fuerte → VÁLIDA
@@ -149,7 +217,8 @@ c) ¿Ninguna marcada? → detected = null
         {"questionNum": 3, "questionType": "mc", "evidence": "CIRCLE en opción B", "detected": "B", "points": 5},
         {"questionNum": 4, "questionType": "mc", "evidence": "STRONG_X en opción A", "detected": "A", "points": 5},
         {"questionNum": 5, "questionType": "ms", "evidence": "STRONG_X en A y C", "detected": "A,C", "points": 5},
-        {"questionNum": 6, "questionType": "mc", "evidence": "EMPTY - sin marca", "detected": null, "points": null}
+        {"questionNum": 6, "questionType": "mc", "evidence": "EMPTY - sin marca", "detected": null, "points": null},
+        {"questionNum": 7, "questionType": "des", "evidence": "TEXTO manuscrito", "detected": "El resultado es 42 pasajeros. Primero 38-12+9=35, luego 35-8+15=42", "points": 25}
       ]
     }
   ]
@@ -157,11 +226,13 @@ c) ¿Ninguna marcada? → detected = null
 
 ## ⚠️ CHECKLIST FINAL ANTES DE RESPONDER:
 1. ¿Incluí TODAS las preguntas del 1 al último número? ✓
-2. ¿Identifiqué correctamente el TIPO de cada pregunta (tf/mc/ms)? ✓
+2. ¿Identifiqué correctamente el TIPO de cada pregunta (tf/mc/ms/des)? ✓
 3. ¿Las alternativas están en MAYÚSCULA (A, B, C, D)? ✓
 4. ¿Las selecciones múltiples están separadas por coma (A,C,D)? ✓
-5. ¿Las preguntas sin marca tienen detected = null? ✓
-6. ¿El JSON es válido, sin texto adicional? ✓
+5. ¿Las preguntas sin marca/respuesta tienen detected = null? ✓
+6. ¿La letra reportada corresponde a la OPCIÓN con marca, no a la posición visual? ✓
+7. ¿Extraje el TEXTO COMPLETO de las respuestas de desarrollo? ✓
+8. ¿El JSON es válido, sin texto adicional? ✓
 
 Devuelve SOLO JSON válido, sin markdown ni explicaciones.
 `

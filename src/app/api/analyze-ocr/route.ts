@@ -29,13 +29,18 @@ export async function POST(request: NextRequest) {
 
     // 2. CONSTRUCCIÓN DEL CONTEXTO (PREGUNTAS)
     const questionsContext = Array.isArray(questions) && questions.length > 0
-      ? `ESTRUCTURA ESPERADA DE LA PRUEBA (Úsala como guía de ubicación):
+      ? `ESTRUCTURA ESPERADA DE LA PRUEBA (Úsala como guía - las opciones están en orden A, B, C, D de arriba a abajo):
          ${questions.map((q: any, i: number) => {
            if (q.type === 'tf') {
              return `P${i+1}: [Verdadero/Falso] - "${q.text?.substring(0, 50)}..."`
            } else if (q.type === 'mc') {
-             const opts = (q.options || []).map((o: string, j: number) => `${String.fromCharCode(65+j)}) ${o?.substring(0, 15)}`).join(', ')
-             return `P${i+1}: [Opción Múltiple: ${opts}] - "${q.text?.substring(0, 40)}..."`
+             const opts = (q.options || []).map((o: string, j: number) => `${String.fromCharCode(65+j)}=${o?.substring(0, 20)}`).join(' | ')
+             return `P${i+1}: [MC - Opciones: ${opts}] "${q.text?.substring(0, 30)}..."`
+           } else if (q.type === 'ms') {
+             const opts = (q.options || []).map((o: any, j: number) => `${String.fromCharCode(65+j)}=${(typeof o === 'string' ? o : o?.text)?.substring(0, 15)}`).join(' | ')
+             return `P${i+1}: [MS - Múltiples: ${opts}] "${q.text?.substring(0, 30)}..."`
+           } else if (q.type === 'des') {
+             return `P${i+1}: [DESARROLLO - Extraer TEXTO MANUSCRITO completo] "${q.text?.substring(0, 50)}..."`
            }
            return `P${i+1}: [Otro tipo]`
          }).join('\n         ')}`
@@ -69,16 +74,69 @@ Formato: "V ( ) F ( )" o "Verdadero ( ) Falso ( )"
 - Marca en F → val = "F", type = "tf"
 
 ### TIPO 2: ALTERNATIVAS / OPCIÓN MÚLTIPLE (A, B, C, D)
-Formato: "a) ( ) b) ( ) c) ( ) d) ( )" o "A. B. C. D."
-- Marca en A → val = "A", type = "mc"
-- Marca en B → val = "B", type = "mc"
-- Marca en C → val = "C", type = "mc"
-- Marca en D → val = "D", type = "mc"
+FORMATOS COMUNES (todos válidos):
+- Formato 1: "a) ( ) b) ( ) c) ( ) d) ( )" con paréntesis después
+- Formato 2: "A. B. C. D." con punto después
+- Formato 3: "(A) (B) (C) (D)" con paréntesis ALREDEDOR de la letra ← COMÚN EN CHILE
+- Formato 4: "( ) A  ( ) B  ( ) C  ( ) D" con paréntesis antes
+
+⚠️ REGLA CRÍTICA PARA DETECTAR LA OPCIÓN MARCADA:
+
+🔴 MÉTODO OBLIGATORIO - CUENTA LAS LÍNEAS:
+1. Las opciones SIEMPRE van en orden: A es la PRIMERA línea, B es la SEGUNDA, C es la TERCERA, D es la CUARTA
+2. NO te confundas por el símbolo al inicio - mira el CONTENIDO de cada opción
+3. Busca la MARCA (X, ✓, círculo, relleno) - puede estar DENTRO del paréntesis
+4. Identifica en QUÉ LÍNEA (1ª, 2ª, 3ª, 4ª) está la marca
+5. Esa línea te dice la letra: 1ª=A, 2ª=B, 3ª=C, 4ª=D
+
+🔴 EJEMPLO CONCRETO:
+Si ves esto:
+  (A) Confiar en el primer resultado      ← Línea 1 = opción A
+  (⊗) Realizar la operación inversa       ← Línea 2 = opción B (TIENE LA X)
+  (C) No verificar                         ← Línea 3 = opción C  
+  (D) Preguntar a un compañero            ← Línea 4 = opción D
+→ La marca X está en la LÍNEA 2 → val = "B"
+
+🔴 ERROR COMÚN A EVITAR:
+- NO reportes la letra que ves al lado de la marca
+- SÍ reporta según la POSICIÓN (línea 1,2,3,4 = A,B,C,D)
+
+Reglas de detección:
+- Marca en 1ª opción → val = "A", type = "mc"
+- Marca en 2ª opción → val = "B", type = "mc"
+- Marca en 3ª opción → val = "C", type = "mc"
+- Marca en 4ª opción → val = "D", type = "mc"
 
 ### TIPO 3: SELECCIÓN MÚLTIPLE (varias correctas)
-Igual que alternativas pero puede tener MÚLTIPLES marcas
+⚠️ CRÍTICO: Revisa CADA opción individualmente para detectar TODAS las marcas.
+Formatos de marca válidos:
+- Checkbox relleno: ☑, ■, ▪, █, ✓ dentro de cuadro
+- X dentro de cuadro: ☒, [X], (X)
+- Cuadro con cualquier contenido visible vs cuadro vacío: □, ☐
+
+🔴 MÉTODO OBLIGATORIO PARA SELECCIÓN MÚLTIPLE:
+1. Examina CADA opción (A, B, C, D) una por una
+2. Para cada opción, verifica si el checkbox/cuadro tiene marca o está relleno
+3. Compara checkbox vacío (□) vs checkbox marcado (■, ☑, ☒)
+4. Reporta TODAS las letras que tienen marca, separadas por coma
+
+EJEMPLOS:
+- □ A) texto  □ B) texto  ■ C) texto  ■ D) texto → val = "C,D", type = "ms"
+- ☐ (A)  ☐ (B)  ☑ (C)  ☑ (D) → val = "C,D", type = "ms"
 - Marcas en A y C → val = "A,C", type = "ms"
 - Marcas en B, C y D → val = "B,C,D", type = "ms"
+- Solo una marca en C → val = "C", type = "ms"
+
+### TIPO 4: DESARROLLO / PROBLEMA (Respuesta escrita)
+Formato: Pregunta con espacio para escribir respuesta (líneas, cuadro, espacio en blanco)
+- El estudiante escribe texto manuscrito o impreso como respuesta
+- EXTRAE el texto completo de la respuesta del estudiante
+- type = "des"
+- val = "[texto extraído de la respuesta]" (máximo 500 caracteres)
+- Si hay operaciones matemáticas, extrae los números y resultados
+- Si no hay respuesta escrita → val = null
+- ⚠️ MUY IMPORTANTE: NO omitas las preguntas de desarrollo, siempre inclúyelas
+- evidence = "TEXTO manuscrito" o "TEXTO impreso" según corresponda
 
 ## 📋 PROTOCOLO DE DETECCIÓN:
 
@@ -87,18 +145,42 @@ Igual que alternativas pero puede tener MÚLTIPLES marcas
 - Identifica CADA pregunta numerada (1, 2, 3, 4, 5, ...)
 - Determina el TIPO: ¿Es V/F o tiene alternativas A,B,C,D?
 
-### PASO 2: ANALIZAR CADA PREGUNTA
+### PASO 2: ANALIZAR CADA PREGUNTA DE ALTERNATIVAS
+⚠️ MUY IMPORTANTE: Para cada pregunta de alternativas:
+1. IDENTIFICA TODAS las opciones (A, B, C, D, etc.)
+2. Para CADA opción, verifica si tiene marca (X, círculo, check, relleno)
+3. La marca puede estar:
+   - Dentro de un paréntesis: (X) B → opción B marcada
+   - Al lado de la letra: X B) → opción B marcada
+   - Sobre la letra o texto de la opción
+4. REPORTA la LETRA de la opción que tiene la marca, NO la posición visual
+
 **Si es V/F:**
 - Localiza V ( ) y F ( )
 - ¿Cuál tiene marca? → val = "V" o "F"
 
 **Si es ALTERNATIVAS:**
-- Localiza a) b) c) d) o A. B. C. D.
-- ¿Cuál tiene marca (X, círculo, check)? → val = "A", "B", "C" o "D"
+- Lee CADA línea de opción de arriba a abajo
+- Identifica la LETRA (A, B, C, D) de cada opción
+- Busca la marca (X, círculo, check) en cada opción
+- REPORTA la letra de la opción marcada
 - ¿Más de una marcada en opción simple? → val = null (invalidado)
 
 **Si es SELECCIÓN MÚLTIPLE:**
-- ¿Cuáles tienen marca? → val = "A,C" (separadas por coma)
+⚠️ CRÍTICO - Examina CADA opción individualmente:
+1. Opción A: ¿tiene checkbox relleno/marcado? (■, ☑, ☒, X) → SÍ/NO
+2. Opción B: ¿tiene checkbox relleno/marcado? → SÍ/NO
+3. Opción C: ¿tiene checkbox relleno/marcado? → SÍ/NO
+4. Opción D: ¿tiene checkbox relleno/marcado? → SÍ/NO
+5. Reporta TODAS las letras con SÍ, separadas por coma
+Ejemplo: Si C=SÍ y D=SÍ → val = "C,D"
+
+**Si es DESARROLLO/PROBLEMA:**
+- Busca el área de respuesta (líneas, cuadro, espacio bajo la pregunta)
+- LEE TODO el texto manuscrito o impreso que el estudiante escribió
+- Extrae números, operaciones matemáticas, y conclusiones
+- val = texto completo de la respuesta (máx 500 chars)
+- Si está vacío o ilegible → val = null
 
 ### PASO 3: CLASIFICAR LA MARCA
 - "STRONG_X": X clara → VÁLIDA
@@ -122,16 +204,19 @@ Igual que alternativas pero puede tener MÚLTIPLES marcas
     { "q": 3, "type": "mc", "evidence": "CIRCLE en opción B", "val": "B" },
     { "q": 4, "type": "mc", "evidence": "STRONG_X en opción A", "val": "A" },
     { "q": 5, "type": "ms", "evidence": "STRONG_X en A y C", "val": "A,C" },
-    { "q": 6, "type": "mc", "evidence": "EMPTY - sin marca", "val": null }
+    { "q": 6, "type": "mc", "evidence": "EMPTY - sin marca", "val": null },
+    { "q": 7, "type": "des", "evidence": "TEXTO manuscrito detectado", "val": "El resultado es 42 pasajeros porque 38-12+9=35, luego 35-8+15=42" }
   ],
   "confidence": "High"
 }
 
 ## ⚠️ CHECKLIST ANTES DE RESPONDER:
 1. ¿Incluí TODAS las preguntas del 1 al ${totalQuestions > 0 ? totalQuestions : 'último'}? ✓
-2. ¿Identifiqué el TIPO correcto (tf/mc/ms)? ✓
+2. ¿Identifiqué el TIPO correcto (tf/mc/ms/des)? ✓
 3. ¿Las alternativas están en MAYÚSCULA (A, B, C, D)? ✓
-4. ¿Las preguntas sin marca tienen val = null? ✓
+4. ¿Las preguntas sin marca/respuesta tienen val = null? ✓
+5. ¿La letra reportada corresponde a la OPCIÓN con marca, no a la posición visual? ✓
+6. ¿Extraje el TEXTO COMPLETO de las respuestas de desarrollo? ✓
 
 Devuelve SOLO JSON válido.
 `;

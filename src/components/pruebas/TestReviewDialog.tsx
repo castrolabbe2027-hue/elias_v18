@@ -61,8 +61,24 @@ function calculatePointsPerQuestionType(test?: Props['test']): { tf: number; mc:
   const activeTypes: Array<'tf'|'mc'|'ms'|'des'> = (['tf','mc','ms','des'] as const).filter((t) => (counts as any)[t] > 0)
   if (activeTypes.length === 0) return { tf: 0, mc: 0, ms: 0, des: 0 }
 
+  // 🆕 Asegurar que weights tenga valores para todos los tipos activos
   const w = test?.weights || {}
-  let sumActive = activeTypes.reduce((acc, t) => acc + (Number((w as any)[t]) || 0), 0)
+  const safeWeights = {
+    tf: Number((w as any).tf) || 0,
+    mc: Number((w as any).mc) || 0,
+    ms: Number((w as any).ms) || 0,
+    des: Number((w as any).des) || 0,
+  }
+  
+  // 🆕 Si hay preguntas de un tipo pero peso 0, asignar peso por defecto
+  activeTypes.forEach((t) => {
+    if (safeWeights[t] <= 0) {
+      safeWeights[t] = 25 // Peso por defecto del 25%
+      console.warn(`[OCR] ⚠️ Peso de ${t} era 0, usando valor por defecto: 25%`)
+    }
+  })
+  
+  let sumActive = activeTypes.reduce((acc, t) => acc + safeWeights[t], 0)
   
   // Si no hay pesos válidos, repartir equitativamente
   const normalized: Record<'tf'|'mc'|'ms'|'des', number> = { tf: 0, mc: 0, ms: 0, des: 0 }
@@ -70,7 +86,7 @@ function calculatePointsPerQuestionType(test?: Props['test']): { tf: number; mc:
     const eq = 1 / activeTypes.length
     activeTypes.forEach((t) => { normalized[t] = eq })
   } else {
-    activeTypes.forEach((t) => { normalized[t] = (Number((w as any)[t]) || 0) / sumActive })
+    activeTypes.forEach((t) => { normalized[t] = safeWeights[t] / sumActive })
   }
 
   const keys = ['tf','mc','ms','des'] as const
@@ -85,7 +101,8 @@ function calculatePointsPerQuestionType(test?: Props['test']): { tf: number; mc:
     result[t] = c > 0 ? perTypePoints[t] / c : 0
   })
   
-  console.log('[OCR] 📊 Puntos por pregunta calculados:', result, 'TotalPoints:', totalPoints, 'Counts:', counts)
+  console.log('[OCR] 📊 Puntos por pregunta calculados:', result)
+  console.log('[OCR] 📊 TotalPoints:', totalPoints, 'Counts:', counts, 'SafeWeights:', safeWeights, 'Normalized:', normalized)
   return result
 }
 
@@ -733,6 +750,14 @@ export default function TestReviewDialog({ open, onOpenChange, test }: Props) {
                     studentCorrect++
                     studentPoints += questionPts
                   }
+                } else if (q?.type === 'des') {
+                  // 🆕 Preguntas de desarrollo: si hay texto significativo, contar como respondida
+                  const detectedText = String(detected).trim()
+                  if (detectedText && detectedText.length > 5) {
+                    studentCorrect++
+                    studentPoints += questionPts
+                    console.log(`[Vision] 📝 P${qNum} DESARROLLO: respuesta detectada (+${questionPts.toFixed(2)} pts)`)
+                  }
                 }
               }
 
@@ -1102,17 +1127,33 @@ export default function TestReviewDialog({ open, onOpenChange, test }: Props) {
                     const qIndex = qNum - 1
                     const q = (test?.questions || [])[qIndex] as any
                     if (!q) {
-                      console.warn(`[OMR] ⚠️ ${studentName} P${qNum}: pregunta no existe en la prueba`)
+                      console.warn(`[OMR] ⚠️ ${studentName} P${qNum}: pregunta no existe en la prueba (qIndex=${qIndex}, total=${test?.questions?.length})`)
                       continue
                     }
                     
+                    // 🆕 Log del tipo de pregunta para debug
+                    console.log(`[OMR] 🔍 ${studentName} P${qNum}: tipo=${q.type}, val="${typeof val === 'string' ? val.substring(0, 30) : val}"`)
+                    
+                    // 🆕 DETECCIÓN INTELIGENTE: Si la respuesta es texto largo, tratarla como desarrollo
+                    // Esto corrige casos donde el tipo guardado no coincide con la respuesta real
+                    const valStr = typeof val === 'string' ? val.trim() : ''
+                    const isLongText = valStr.length > 20
+                    const isNotStandardAnswer = !['V', 'F', 'A', 'B', 'C', 'D', 'E', 'A,B', 'A,C', 'A,D', 'B,C', 'B,D', 'C,D', 'A,B,C', 'A,B,D', 'A,C,D', 'B,C,D', 'A,B,C,D'].includes(valStr.toUpperCase())
+                    const shouldTreatAsDevelopment = isLongText && isNotStandardAnswer
+                    
+                    // Determinar el tipo efectivo de la pregunta
+                    const effectiveType = shouldTreatAsDevelopment ? 'des' : q.type
+                    if (shouldTreatAsDevelopment && q.type !== 'des') {
+                      console.log(`[OMR] 🔄 ${studentName} P${qNum}: Respuesta larga detectada, tratando como DESARROLLO (tipo original: ${q.type})`)
+                    }
+                    
                     // Obtener puntos según el TIPO de pregunta
-                    const questionPoints = q.type === 'tf' ? pointsPerType.tf
-                      : q.type === 'mc' ? pointsPerType.mc
-                      : q.type === 'ms' ? pointsPerType.ms
+                    const questionPoints = effectiveType === 'tf' ? pointsPerType.tf
+                      : effectiveType === 'mc' ? pointsPerType.mc
+                      : effectiveType === 'ms' ? pointsPerType.ms
                       : pointsPerType.des
                     
-                    if (q.type === 'tf') {
+                    if (effectiveType === 'tf') {
                       const correct = q.answer ? 'V' : 'F'
                       const detected = typeof val === 'string' ? val.toUpperCase().trim() : ''
                       
@@ -1129,7 +1170,7 @@ export default function TestReviewDialog({ open, onOpenChange, test }: Props) {
                       } else {
                         console.log(`[OMR] ❌ ${studentName} P${qNum}: ${detected} != ${correct} (incorrecta, 0 pts)`)
                       }
-                    } else if (q.type === 'mc') {
+                    } else if (effectiveType === 'mc') {
                       const correct = String.fromCharCode(65 + q.correctIndex)
                       const detected = typeof val === 'string' ? val.toUpperCase().trim() : ''
                       
@@ -1140,7 +1181,7 @@ export default function TestReviewDialog({ open, onOpenChange, test }: Props) {
                       } else {
                         console.log(`[OMR] ❌ ${studentName} P${qNum}: ${detected} != ${correct} (incorrecta, 0 pts)`)
                       }
-                    } else if (q.type === 'ms') {
+                    } else if (effectiveType === 'ms') {
                       const correctLabels = q.options.map((o: any, j: number) => o.correct ? String.fromCharCode(65 + j) : '').filter(Boolean)
                       const detectedLabels = (val || '').split(',').map((l: string) => l.trim().toUpperCase()).filter(Boolean)
                       if (correctLabels.length === detectedLabels.length && correctLabels.every((l: string) => detectedLabels.includes(l))) {
@@ -1149,6 +1190,21 @@ export default function TestReviewDialog({ open, onOpenChange, test }: Props) {
                         console.log(`[OMR] ✅ ${studentName} P${qNum}: correcta (+${questionPoints.toFixed(2)} pts)`)
                       } else {
                         console.log(`[OMR] ❌ ${studentName} P${qNum}: incorrecta (0 pts)`)
+                      }
+                    } else if (effectiveType === 'des') {
+                      // Preguntas de desarrollo: verificar si hay respuesta escrita
+                      const detectedText = typeof val === 'string' ? val.trim() : ''
+                      console.log(`[OMR] 📋 ${studentName} P${qNum} (des): detectedText.length=${detectedText.length}, questionPoints=${questionPoints}`)
+                      if (detectedText && detectedText.length > 5) {
+                        // Si hay texto significativo, contar como respondida
+                        // La evaluación real debería ser manual o con IA más avanzada
+                        // Por ahora, asignamos puntos completos por responder (el profesor puede ajustar)
+                        studentCorrect++
+                        studentPts += questionPoints
+                        console.log(`[OMR] 📝 ${studentName} P${qNum}: respuesta de desarrollo detectada (+${questionPoints.toFixed(2)} pts preliminares)`)
+                        console.log(`[OMR]    Texto: "${detectedText.substring(0, 100)}..."`)
+                      } else {
+                        console.log(`[OMR] ⬜ ${studentName} P${qNum}: sin respuesta de desarrollo (texto muy corto: "${detectedText}")`)
                       }
                     }
                   }
@@ -1450,6 +1506,17 @@ export default function TestReviewDialog({ open, onOpenChange, test }: Props) {
               }
             } else if (q.type === 'des') {
               bd.des.total++
+              // Para desarrollo: verificar si hay texto significativo
+              const detectedText = (aiAnswer?.detected || '').trim()
+              if (detectedText && detectedText.length > 5) {
+                // Si hay respuesta escrita, contar como respondida/correcta preliminarmente
+                aiCorrect++
+                bd.des.correct++
+                console.log(`[AI Analysis] 📝 Pregunta ${i + 1} DESARROLLO: respuesta detectada`)
+                console.log(`[AI Analysis]    Texto: "${detectedText.substring(0, 80)}..."`)
+              } else {
+                console.log(`[AI Analysis] ⬜ Pregunta ${i + 1} DESARROLLO: sin respuesta`)
+              }
             }
           }
           
@@ -2192,6 +2259,11 @@ export default function TestReviewDialog({ open, onOpenChange, test }: Props) {
                               .join(',')
                             correct = correctLabels
                             isCorrect = correctLabels === detectedLabels
+                          } else if (q?.type === 'des') {
+                            // 🆕 Preguntas de desarrollo: si hay texto significativo, es correcta
+                            const hasText = ans.detected && ans.detected.length > 5
+                            correct = 'Respuesta escrita'
+                            isCorrect = hasText
                           }
                           
                           return (
@@ -2339,6 +2411,11 @@ export default function TestReviewDialog({ open, onOpenChange, test }: Props) {
                                   .join(',')
                                 correctAnswer = correctLabels
                                 isCorrect = correctLabels === detectedLabels
+                              } else if (q?.type === 'des') {
+                                // Desarrollo: si hay texto, se considera respondida
+                                const hasText = ans.detected && ans.detected.length > 5
+                                correctAnswer = 'Respuesta escrita'
+                                isCorrect = hasText // Verde si hay respuesta
                               }
                               
                               const isEmpty = !ans.detected
@@ -2350,9 +2427,9 @@ export default function TestReviewDialog({ open, onOpenChange, test }: Props) {
                                     isEmpty ? 'bg-gray-200 text-gray-500' :
                                     isCorrect ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'
                                   }`}
-                                  title={`P${ans.questionNum} (${q?.type || '?'}): ${isEmpty ? 'Sin respuesta' : ans.detected} ${isEmpty ? '' : isCorrect ? '✅ Correcto' : `❌ Correcto: ${correctAnswer}`}`}
+                                  title={`P${ans.questionNum} (${q?.type || '?'}): ${isEmpty ? 'Sin respuesta' : (q?.type === 'des' ? ans.detected : ans.detected)} ${isEmpty ? '' : isCorrect ? '✅ Correcto' : `❌ Correcto: ${correctAnswer}`}`}
                                 >
-                                  {ans.questionNum}:{isEmpty ? '-' : ans.detected}
+                                  {ans.questionNum}:{isEmpty ? '-' : (q?.type === 'des' ? (ans.detected?.length > 15 ? '✍️' + ans.detected.substring(0, 12) + '...' : '✍️' + ans.detected) : ans.detected)}
                                 </span>
                               )
                             })}
