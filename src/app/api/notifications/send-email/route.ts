@@ -6,19 +6,18 @@ import { NextRequest, NextResponse } from 'next/server';
  * 
  * Correo de envío: notificaciones@smartstudent.cl
  * 
- * Usando Mailrelay API
+ * Usando Resend API
  */
 
-// Configuración de Mailrelay
-const MAILRELAY_API_KEY = process.env.MAILRELAY_API_KEY || '';
-const MAILRELAY_API_URL = process.env.MAILRELAY_API_URL || 'https://smartstudent.ip-zone.com/api/v1';
-const FROM_EMAIL = process.env.MAILRELAY_FROM_EMAIL || 'notificaciones@smartstudent.cl';
-const FROM_NAME = process.env.MAILRELAY_FROM_NAME || 'Smart Student';
+// Configuración de Resend
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'notificaciones@smartstudent.cl';
+const FROM_NAME = process.env.RESEND_FROM_NAME || 'Smart Student';
 
 /**
- * Envía un email usando Mailrelay API
+ * Envía un email usando Resend API
  */
-const sendWithMailrelay = async (emailData: {
+const sendWithResend = async (emailData: {
   from: string;
   fromName: string;
   to: string;
@@ -27,55 +26,47 @@ const sendWithMailrelay = async (emailData: {
   html: string;
 }): Promise<{ success: boolean; messageId?: string; error?: string }> => {
   try {
-    console.log('📧 [MAILRELAY] Sending to:', emailData.to);
+    console.log('📧 [RESEND] Sending to:', emailData.to);
     
-    if (!MAILRELAY_API_KEY) {
-      console.error('❌ [MAILRELAY] API key not configured');
+    if (!RESEND_API_KEY) {
+      console.error('❌ [RESEND] API key not configured');
       return { 
         success: false, 
-        error: 'Mailrelay API key not configured' 
+        error: 'Resend API key not configured' 
       };
     }
 
-    const response = await fetch(`${MAILRELAY_API_URL}/send_emails`, {
+    const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Auth-Token': MAILRELAY_API_KEY,
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: {
-          email: emailData.from,
-          name: emailData.fromName,
-        },
-        to: [
-          {
-            email: emailData.to,
-            name: emailData.toName,
-          }
-        ],
+        from: `${emailData.fromName} <${emailData.from}>`,
+        to: [emailData.to],
         subject: emailData.subject,
-        html_part: emailData.html,
+        html: emailData.html,
       }),
     });
 
     const result = await response.json();
 
-    if (response.ok && result.status !== 'error') {
-      console.log('✅ [MAILRELAY] Email sent successfully:', result.id || result);
+    if (response.ok && result.id) {
+      console.log('✅ [RESEND] Email sent successfully:', result.id);
       return { 
         success: true, 
-        messageId: result.id || 'sent' 
+        messageId: result.id 
       };
     } else {
-      console.error('❌ [MAILRELAY] API error:', result);
+      console.error('❌ [RESEND] API error:', result);
       return { 
         success: false, 
-        error: result.message || result.error || 'Mailrelay API error' 
+        error: result.message || result.error || 'Resend API error' 
       };
     }
   } catch (error) {
-    console.error('❌ [MAILRELAY] Exception:', error);
+    console.error('❌ [RESEND] Exception:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Unknown error' 
@@ -117,7 +108,7 @@ export async function POST(request: NextRequest) {
 
     const senderEmail = FROM_EMAIL;
 
-    console.log('📧 [MAILRELAY] Processing email request:', {
+    console.log('📧 [RESEND] Processing email request:', {
       from: senderEmail,
       to,
       subject,
@@ -137,8 +128,8 @@ export async function POST(request: NextRequest) {
       feedback: metadata?.feedback
     });
 
-    // Enviar con Mailrelay API
-    const result = await sendWithMailrelay({
+    // Enviar con Resend API
+    const result = await sendWithResend({
       from: senderEmail,
       fromName: FROM_NAME,
       to: to,
@@ -148,18 +139,18 @@ export async function POST(request: NextRequest) {
     });
 
     if (result.success) {
-      console.log('✅ [MAILRELAY] Email sent successfully:', result.messageId);
+      console.log('✅ [RESEND] Email sent successfully:', result.messageId);
       return NextResponse.json({
         success: true,
-        message: 'Email sent successfully via Mailrelay',
+        message: 'Email sent successfully via Resend',
         messageId: result.messageId
       });
     } else {
-      console.error('❌ [MAILRELAY] Failed to send email:', result.error);
+      console.error('❌ [RESEND] Failed to send email:', result.error);
       return NextResponse.json(
         { 
           success: false,
-          error: 'Failed to send email via Mailrelay', 
+          error: 'Failed to send email via Resend', 
           details: result.error
         },
         { status: 500 }
