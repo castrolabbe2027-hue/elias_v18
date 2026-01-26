@@ -10721,11 +10721,16 @@ Formato: Una línea por insight. Si hay datos completos: máximo 6 insights. Si 
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       const margin = 30;
+      const headerHeight = 80;
+      const footerHeight = 22;
+      // Conversión aproximada (jsPDF usa pt a 72 DPI; el navegador suele ser 96 DPI)
+      const pxPerPt = 96 / 72;
+      const captureWidthPx = Math.round((pageWidth - (margin * 2)) * pxPerPt);
 
       // Mostrar indicador de carga
       const loadingEl = document.createElement('div');
       loadingEl.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.9);color:white;padding:24px 32px;border-radius:12px;z-index:10000;font-family:system-ui;font-size:16px;box-shadow:0 4px 20px rgba(0,0,0,0.5)';
-      loadingEl.textContent = '📊 Generando PDF...';
+      loadingEl.textContent = 'Generando PDF...';
       document.body.appendChild(loadingEl);
 
       // Guardar estado original del scroll
@@ -10738,9 +10743,6 @@ Formato: Una línea por insight. Si hay datos completos: máximo 6 insights. Si 
       // Pequeña pausa para que el DOM se estabilice
       await new Promise(resolve => setTimeout(resolve, 300));
 
-      // Obtener el bounding rect del contenedor
-      const rect = container.getBoundingClientRect();
-      
       // Optimizar captura - sin foreignObjectRendering para mejor compatibilidad
       const canvas = await html2canvas(container as HTMLElement, {
         scale: 2, // Mejor calidad
@@ -10749,23 +10751,28 @@ Formato: Una línea por insight. Si hay datos completos: máximo 6 insights. Si 
         allowTaint: true,
         foreignObjectRendering: false, // Desactivar para mejor compatibilidad
         logging: false,
-        width: container.scrollWidth,
-        height: container.scrollHeight,
-        x: 0,
-        y: 0,
         scrollX: 0,
         scrollY: 0,
-        windowWidth: container.scrollWidth,
-        windowHeight: container.scrollHeight,
+        windowWidth: captureWidthPx,
         onclone: (clonedDoc) => {
           const clonedContainer = clonedDoc.getElementById('teacher-stats-container');
           if (clonedContainer) {
+            // Forzar un ancho consistente (similar al ancho útil del PDF)
+            (clonedDoc.documentElement as HTMLElement).style.backgroundColor = '#0f172a';
+            (clonedDoc.body as HTMLElement).style.backgroundColor = '#0f172a';
+            (clonedDoc.body as HTMLElement).style.margin = '0';
+
             // Asegurar visibilidad del contenido
             clonedContainer.style.transform = 'none';
             clonedContainer.style.position = 'relative';
             clonedContainer.style.overflow = 'visible';
             clonedContainer.style.opacity = '1';
             clonedContainer.style.visibility = 'visible';
+            clonedContainer.style.width = `${captureWidthPx}px`;
+            clonedContainer.style.maxWidth = `${captureWidthPx}px`;
+            clonedContainer.style.margin = '0 auto';
+            clonedContainer.style.boxSizing = 'border-box';
+            clonedContainer.style.padding = '12px';
             
             // Asegurar que todos los hijos son visibles
             const allElements = clonedContainer.querySelectorAll('*');
@@ -10804,23 +10811,49 @@ Formato: Una línea por insight. Si hay datos completos: máximo 6 insights. Si 
       
       console.log('[PDF] Canvas capturado:', canvas.width, 'x', canvas.height);
 
-      // Agregar encabezado al PDF
-      pdf.setFillColor(15, 23, 42); // slate-900
-      pdf.rect(0, 0, pageWidth, 80, 'F');
-      
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(20);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(t('statisticsPageTitle','Estadísticas') + ' - Smart Student', margin, 35);
-      
-      pdf.setFontSize(11);
-      pdf.setFont('helvetica', 'normal');
-      const today = new Date().toLocaleDateString(language === 'en' ? 'en-US' : 'es-ES', { 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
+      const today = new Date().toLocaleDateString(language === 'en' ? 'en-US' : 'es-ES', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
       });
-      pdf.text(`${language === 'en' ? 'Generated on' : 'Generado el'} ${today}`, margin, 55);
+
+      const drawHeader = (pageIndex: number, totalPages: number) => {
+        pdf.setFillColor(15, 23, 42); // slate-900
+        pdf.rect(0, 0, pageWidth, headerHeight, 'F');
+
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(20);
+        pdf.text(t('statisticsPageTitle', 'Estadísticas') + ' - Smart Student', margin, 34);
+
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(11);
+        pdf.text(`${language === 'en' ? 'Generated on' : 'Generado el'} ${today}`, margin, 54);
+
+        // Número de página discreto (derecha)
+        pdf.setFontSize(10);
+        pdf.setTextColor(226, 232, 240); // slate-200
+        pdf.text(
+          `${language === 'en' ? 'Page' : 'Página'} ${pageIndex + 1} / ${totalPages}`,
+          pageWidth - margin,
+          54,
+          { align: 'right' }
+        );
+      };
+
+      const drawFooter = (pageIndex: number, totalPages: number) => {
+        const footerY = pageHeight - 12;
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(9);
+        pdf.setTextColor(148, 163, 184); // slate-400
+        pdf.text('Smart Student', margin, footerY);
+        pdf.text(
+          `${language === 'en' ? 'Page' : 'Página'} ${pageIndex + 1} / ${totalPages}`,
+          pageWidth - margin,
+          footerY,
+          { align: 'right' }
+        );
+      };
 
       // Filtros activos
       const activeFilterParts = [];
@@ -10829,63 +10862,70 @@ Formato: Una línea por insight. Si hay datos completos: máximo 6 insights. Si 
   if (adminCourse !== 'all' || selectedCourse !== 'all') activeFilterParts.push(t('specificCourse','Curso específico'));
       
       if (activeFilterParts.length > 0) {
-        pdf.text(`${language === 'en' ? 'Filters' : 'Filtros'}: ${activeFilterParts.join(' • ')}`, margin, 70);
+        // Los filtros se dibujan solo en la primera página, dentro del header.
+        // Se renderizan después de drawHeader(0, totalPages) cuando conozcamos totalPages.
       }
       if (subjectFilter !== 'all') activeFilterParts.push(t('subject','Asignatura'));
 
-      // Calcular dimensiones optimizadas para el contenido
-      const contentStartY = 100; // Después del encabezado
-      const availableHeight = pageHeight - contentStartY - margin;
-      const imgWidth = pageWidth - (margin * 2);
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      // Layout profesional: llenar el ancho útil y centrar el contenido
+      const contentStartY = headerHeight + 20;
+      const availableHeight = pageHeight - contentStartY - footerHeight - 10;
+      const targetWidth = pageWidth - (margin * 2);
+      const scalePtPerPx = targetWidth / canvas.width;
+      const sliceHeightPx = Math.max(1, Math.floor(availableHeight / scalePtPerPx));
+      const totalPages = Math.ceil(canvas.height / sliceHeightPx);
 
-      // Si la imagen cabe en una página
-      if (imgHeight <= availableHeight) {
-        const imgData = canvas.toDataURL('image/png', 0.95);
-        pdf.addImage(imgData, 'PNG', margin, contentStartY, imgWidth, imgHeight);
-      } else {
-        // Dividir en múltiples páginas
-        const totalPages = Math.ceil(imgHeight / availableHeight);
-        const sliceHeight = canvas.height / totalPages;
+      // Dibujar primera página (header + filtros)
+      drawHeader(0, totalPages);
+      if (activeFilterParts.length > 0) {
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(10);
+        pdf.setTextColor(226, 232, 240); // slate-200
+        const label = `${language === 'en' ? 'Filters' : 'Filtros'}: `;
+        const value = activeFilterParts.join(' • ');
+        pdf.text(label + value, margin, 70);
+      }
 
-        for (let i = 0; i < totalPages; i++) {
-          if (i > 0) {
-            pdf.addPage();
-            // Agregar encabezado reducido en páginas adicionales
-            pdf.setFillColor(30, 41, 59);
-            pdf.rect(0, 0, pageWidth, 50, 'F');
-            pdf.setTextColor(255, 255, 255);
-            pdf.setFontSize(14);
-            pdf.setFont('helvetica', 'bold');
-            pdf.text(`Estadísticas - Página ${i + 1} de ${totalPages}`, margin, 30);
-          }
-
-          // Crear slice del canvas
-          const sliceCanvas = document.createElement('canvas');
-          sliceCanvas.width = canvas.width;
-          sliceCanvas.height = Math.min(sliceHeight, canvas.height - (i * sliceHeight));
-          
-          const ctx = sliceCanvas.getContext('2d');
-          if (ctx) {
-            // Fondo oscuro consistente
-            ctx.fillStyle = '#1e293b';
-            ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-            
-            // Dibujar el slice
-            ctx.drawImage(
-              canvas,
-              0, i * sliceHeight, // origen
-              canvas.width, sliceCanvas.height, // tamaño fuente
-              0, 0, // destino
-              sliceCanvas.width, sliceCanvas.height // tamaño destino
-            );
-          }
-
-          const sliceData = sliceCanvas.toDataURL('image/png', 0.95);
-          const sliceImgHeight = (sliceCanvas.height * imgWidth) / sliceCanvas.width;
-          const currentContentStartY = i === 0 ? contentStartY : 60; // Menos espacio en páginas adicionales
-          pdf.addImage(sliceData, 'PNG', margin, currentContentStartY, imgWidth, sliceImgHeight);
+      for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
+        if (pageIndex > 0) {
+          pdf.addPage();
+          drawHeader(pageIndex, totalPages);
         }
+
+        // Crear slice del canvas según altura disponible real en el PDF
+        const yPx = pageIndex * sliceHeightPx;
+        const currentSliceHeightPx = Math.min(sliceHeightPx, canvas.height - yPx);
+
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = canvas.width;
+        sliceCanvas.height = currentSliceHeightPx;
+
+        const ctx = sliceCanvas.getContext('2d');
+        if (ctx) {
+          // Fondo consistente
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+          ctx.drawImage(
+            canvas,
+            0,
+            yPx,
+            canvas.width,
+            currentSliceHeightPx,
+            0,
+            0,
+            sliceCanvas.width,
+            sliceCanvas.height
+          );
+        }
+
+        const sliceData = sliceCanvas.toDataURL('image/png', 0.92);
+        const sliceHeightPt = sliceCanvas.height * scalePtPerPx;
+
+        // Centrado horizontal perfecto
+        const x = (pageWidth - targetWidth) / 2;
+        pdf.addImage(sliceData, 'PNG', x, contentStartY, targetWidth, sliceHeightPt);
+
+        drawFooter(pageIndex, totalPages);
       }
 
       // Generar nombre de archivo con filtros activos
