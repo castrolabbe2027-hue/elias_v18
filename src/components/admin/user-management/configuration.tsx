@@ -4084,40 +4084,49 @@ export default function Configuration() {
   };
 
   // ==========================
-  // � REINICIAR SISTEMA COMPLETO
+  // 🔴 REINICIAR SISTEMA COMPLETO
   // ==========================
   const handleResetSystem = async () => {
     setIsResettingSystem(true);
+    
+    // Obtener TODOS los años existentes en el sistema
+    const allYears = LocalStorageManager.listYears?.() || [selectedYear];
+    console.log('🗓️ [RESET SYSTEM] Años a eliminar:', allYears);
+    
+    // Calcular total de pasos: pasos base + pasos por cada año adicional
+    const baseSteps = 12; // Pasos que no dependen del año
+    const perYearSteps = 9; // Pasos por cada año (estudiantes, profesores, cursos, secciones, etc.)
+    const totalSteps = baseSteps + (allYears.length * perYearSteps);
     
     // Reiniciar el progreso a 0 ANTES de abrir el modal
     setResetSystemProgress({
       phase: translate('resetProgressInitializing') || 'Preparando...',
       current: 0,
-      total: 19
+      total: totalSteps
     });
     
     setShowResetProgressModal(true);
     
-    const totalSteps = 19; // 19 pasos (incluyendo comunicaciones, tareas, evaluaciones y notificaciones)
     let currentStep = 0;
 
-    const updateProgress = (phaseKey: string) => {
+    const updateProgress = (phaseKey: string, detail?: string) => {
       currentStep++;
-      console.log(`📊 [RESET PROGRESS] Paso ${currentStep}/${totalSteps} - ${phaseKey}`);
+      const phaseText = detail ? `${translate(phaseKey)} ${detail}` : translate(phaseKey);
+      console.log(`📊 [RESET PROGRESS] Paso ${currentStep}/${totalSteps} - ${phaseText}`);
       setResetSystemProgress({
-        phase: translate(phaseKey),
+        phase: phaseText,
         current: currentStep,
         total: totalSteps
       });
     };
 
     try {
-      console.log('🔴 [RESET SYSTEM] Iniciando reinicio completo del sistema...');
+      console.log('🔴 [RESET SYSTEM] Iniciando reinicio completo del sistema (TODOS LOS AÑOS)...');
       
-      // Pequeña pausa para que se vea el estado inicial 0/13
+      // Pequeña pausa para que se vea el estado inicial
       await new Promise(resolve => setTimeout(resolve, 300));
       
-      // Paso 1: Eliminar calificaciones de Firebase
+      // Paso 1: Eliminar calificaciones de Firebase (todos los años)
       updateProgress('resetProgressGrades');
       try {
         await deleteAllSQLGrades();
@@ -4126,7 +4135,7 @@ export default function Configuration() {
         console.warn('⚠️ Error al eliminar calificaciones de Firebase:', e);
       }
       
-      // Paso 2: Eliminar asistencia de Firebase
+      // Paso 2: Eliminar asistencia de Firebase (todos los años)
       updateProgress('resetProgressAttendance');
       try {
         await clearAllAttendance();
@@ -4135,84 +4144,90 @@ export default function Configuration() {
         console.warn('⚠️ Error al eliminar asistencia de Firebase:', e);
       }
 
-      // Paso 3: Eliminar estudiantes de LocalStorage
-      updateProgress('resetProgressStudents');
-      LocalStorageManager.setStudentsForYear(selectedYear, []);
-      console.log('✅ Estudiantes eliminados');
+      // 🆕 ELIMINAR DATOS DE CADA AÑO
+      for (const year of allYears) {
+        console.log(`🗑️ [RESET SYSTEM] Eliminando datos del año ${year}...`);
+        
+        // Estudiantes
+        updateProgress('resetProgressStudents', `(${year})`);
+        LocalStorageManager.setStudentsForYear(year, []);
+        console.log(`✅ Estudiantes ${year} eliminados`);
 
-      // Paso 4: Eliminar profesores de LocalStorage
-      updateProgress('resetProgressTeachers');
-      LocalStorageManager.setTeachersForYear(selectedYear, []);
-      console.log('✅ Profesores eliminados');
+        // Profesores
+        updateProgress('resetProgressTeachers', `(${year})`);
+        LocalStorageManager.setTeachersForYear(year, []);
+        console.log(`✅ Profesores ${year} eliminados`);
 
-      // Paso 5: Eliminar asignaciones de profesores
-      updateProgress('resetProgressTeacherAssignments');
-      LocalStorageManager.setTeacherAssignmentsForYear(selectedYear, []);
-      localStorage.removeItem('smart-student-teacher-assignments');
-      console.log('✅ Asignaciones de profesores eliminadas');
+        // Asignaciones de profesores
+        updateProgress('resetProgressTeacherAssignments', `(${year})`);
+        LocalStorageManager.setTeacherAssignmentsForYear(year, []);
+        console.log(`✅ Asignaciones de profesores ${year} eliminadas`);
 
-      // Paso 6: Eliminar cursos
-      updateProgress('resetProgressCourses');
-      LocalStorageManager.setCoursesForYear(selectedYear, []);
-      localStorage.removeItem('smart-student-courses');
-      console.log('✅ Cursos eliminados');
+        // Cursos
+        updateProgress('resetProgressCourses', `(${year})`);
+        LocalStorageManager.setCoursesForYear(year, []);
+        console.log(`✅ Cursos ${year} eliminados`);
 
-      // Paso 7: Eliminar secciones
-      updateProgress('resetProgressSections');
-      LocalStorageManager.setSectionsForYear(selectedYear, []);
-      localStorage.removeItem('smart-student-sections');
-      console.log('✅ Secciones eliminadas');
+        // Secciones
+        updateProgress('resetProgressSections', `(${year})`);
+        LocalStorageManager.setSectionsForYear(year, []);
+        console.log(`✅ Secciones ${year} eliminadas`);
 
-      // Paso 8: Eliminar asignaturas
-      updateProgress('resetProgressSubjects');
-      LocalStorageManager.setSubjectsForYear(selectedYear, []);
-      console.log('✅ Asignaturas eliminadas');
+        // Asignaturas
+        updateProgress('resetProgressSubjects', `(${year})`);
+        LocalStorageManager.setSubjectsForYear(year, []);
+        console.log(`✅ Asignaturas ${year} eliminadas`);
 
-      // Paso 9: Eliminar asignaciones de estudiantes
-      updateProgress('resetProgressStudentAssignments');
-      LocalStorageManager.setStudentAssignmentsForYear(selectedYear, []);
-      localStorage.removeItem('smart-student-student-assignments');
-      console.log('✅ Asignaciones de estudiantes eliminadas');
+        // Asignaciones de estudiantes
+        updateProgress('resetProgressStudentAssignments', `(${year})`);
+        LocalStorageManager.setStudentAssignmentsForYear(year, []);
+        console.log(`✅ Asignaciones de estudiantes ${year} eliminadas`);
 
-      // Paso 9.1: Eliminar apoderados de LocalStorage
-      updateProgress('resetProgressGuardians');
-      LocalStorageManager.setGuardiansForYear(selectedYear, []);
-      localStorage.removeItem('smart-student-guardians');
-      console.log('✅ Apoderados eliminados');
+        // Apoderados
+        updateProgress('resetProgressGuardians', `(${year})`);
+        LocalStorageManager.setGuardiansForYear(year, []);
+        console.log(`✅ Apoderados ${year} eliminados`);
 
-      // Paso 9.2: Eliminar relaciones apoderado-estudiante
-      updateProgress('resetProgressGuardianRelations');
-      LocalStorageManager.setGuardianStudentRelationsForYear(selectedYear, []);
-      localStorage.removeItem('smart-student-guardian-students');
-      console.log('✅ Relaciones apoderado-estudiante eliminadas');
+        // Relaciones apoderado-estudiante
+        updateProgress('resetProgressGuardianRelations', `(${year})`);
+        LocalStorageManager.setGuardianStudentRelationsForYear(year, []);
+        console.log(`✅ Relaciones apoderado-estudiante ${year} eliminadas`);
+      }
 
-      // Paso 10: Eliminar calificaciones de LocalStorage
+      // Eliminar claves globales de localStorage
       updateProgress('resetProgressGradesLS');
+      localStorage.removeItem('smart-student-courses');
+      localStorage.removeItem('smart-student-sections');
+      localStorage.removeItem('smart-student-teacher-assignments');
+      localStorage.removeItem('smart-student-student-assignments');
+      localStorage.removeItem('smart-student-guardians');
+      localStorage.removeItem('smart-student-guardian-students');
       localStorage.removeItem('smart-student-test-grades');
       localStorage.removeItem('smart-student-test-grades-cache');
-      console.log('✅ Calificaciones de LocalStorage eliminadas');
+      console.log('✅ Claves globales de LocalStorage eliminadas');
 
-      // Paso 11: Eliminar asistencia de LocalStorage
+      // Eliminar asistencia de LocalStorage
       updateProgress('resetProgressAttendanceLS');
       localStorage.removeItem('smart-student-attendance');
       console.log('✅ Asistencia de LocalStorage eliminada');
 
-      // Paso 12: Eliminar comunicaciones
+      // Eliminar comunicaciones
       updateProgress('resetProgressCommunications');
       localStorage.removeItem('smart-student-communications');
       console.log('✅ Comunicaciones eliminadas');
 
-      // Paso 13: Eliminar tareas
+      // Eliminar tareas
       updateProgress('resetProgressTasks');
       localStorage.removeItem('smart-student-tasks');
       console.log('✅ Tareas eliminadas');
 
-      // Paso 14: Eliminar evaluaciones
+      // Eliminar evaluaciones/pruebas
       updateProgress('resetProgressEvaluations');
       localStorage.removeItem('smart-student-evaluations');
+      localStorage.removeItem('smart-student-tests');
       console.log('✅ Evaluaciones eliminadas');
 
-      // Paso 15: Eliminar notificaciones
+      // Eliminar notificaciones
       updateProgress('resetProgressNotifications');
       localStorage.removeItem('smart-student-notifications');
       // También eliminar preferencias de notificaciones por email de usuarios
@@ -4224,15 +4239,27 @@ export default function Configuration() {
       });
       console.log('✅ Notificaciones eliminadas');
 
-      // Paso 16: Limpiar usuarios (solo estudiantes y profesores del año)
+      // Limpiar usuarios (solo estudiantes, profesores y apoderados - preservar admins)
       updateProgress('resetProgressUsers');
       const allUsers = JSON.parse(localStorage.getItem('smart-student-users') || '[]');
       const admins = allUsers.filter((u: any) => u.role === 'admin');
       safeSaveSmartStudentUsers(admins, 'resetSystem');
       console.log('✅ Usuarios limpiados (admins preservados)');
 
-      // Paso 17: Finalizar (disparar eventos y actualizar contadores)
+      // Eliminar TODAS las claves relacionadas con años específicos
       updateProgress('resetProgressCounters');
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('smart-student-') && /\d{4}$/.test(key)) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => {
+        localStorage.removeItem(key);
+        console.log(`🗑️ Eliminada clave: ${key}`);
+      });
+      console.log(`✅ ${keysToRemove.length} claves de años específicos eliminadas`);
       
       // Disparar eventos de actualización
       try {
@@ -4261,12 +4288,14 @@ export default function Configuration() {
         console.warn('⚠️ Error al actualizar contadores:', e);
       }
 
-      // Marcar como completado (sin incrementar contador)
+      // Marcar como completado
       setResetSystemProgress({
         phase: translate('resetProgressComplete'),
         current: totalSteps,
         total: totalSteps
       });
+      
+      console.log('🎉 [RESET SYSTEM] Sistema reiniciado completamente. Años eliminados:', allYears);
       
       toast({
         title: translate('resetSystemSuccessTitle'),
